@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@theme {
+  /* Telegram-inspired blue brand palette */
+  --color-brand-50: #eaf6ff;
+  --color-brand-100: #d2ecff;
+  --color-brand-200: #a8d8ff;
+  --color-brand-300: #7cc4ff;
+  --color-brand-400: #4aa9f0;
+  --color-brand-500: #3390ec;
+  --color-brand-600: #2481cc;
+  --color-brand-700: #1c6bb0;
+  --color-brand-800: #155389;
+  --color-brand-900: #0e3d66;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #dcebfb 0%, #c8ddf5 100%);
+  background-attachment: fixed;
+  color: #0f172a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", sans-serif;
+}
+
+/* Telegram-style subtle dotted chat backdrop */
+.tg-chat-bg {
+  background-color: #cfd9e6;
+  background-image: radial-gradient(rgba(51, 144, 236, 0.12) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Auth screens: signature Telegram blue gradient */
+.tg-auth-bg {
+  background: linear-gradient(160deg, #4aa9f0 0%, #3390ec 45%, #1c6bb0 100%);
+}
+
+/* Thin, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.4);
+  border-radius: 9999px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.toast-in {
+  animation: toast-in 0.25s ease-out;
+}
