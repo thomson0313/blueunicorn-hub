@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Company Members Hub",
+  title: "Company Members Hub - BlueUnicorn",
+  icons: {
+    icon: "/favicon.ico",
+  },
   description: "Manage members, projects, chat, and alerts.",
 };
 
