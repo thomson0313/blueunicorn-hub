@@ -11,8 +11,8 @@ export async function GET() {
     await requireAdmin();
     await connectDB();
 
-    const counts = projectCountsByOwner();
-    const members = listUsers().map((u) => ({
+    const counts = await projectCountsByOwner();
+    const members = (await listUsers()).map((u) => ({
       _id: u._id,
       name: u.name,
       email: u.email,
@@ -49,12 +49,12 @@ export async function POST(req: Request) {
 
     const { name, email, username, password, role } = parsed.data;
 
-    if (emailOrUsernameTaken(email, username || null)) {
+    if (await emailOrUsernameTaken(email, username || null)) {
       return NextResponse.json({ error: "Email or username already in use" }, { status: 409 });
     }
 
     const passwordHash = await hashPassword(password);
-    const user = createUser({ name, email, username: username || null, passwordHash, role });
+    const user = await createUser({ name, email, username: username || null, passwordHash, role });
 
     return NextResponse.json(
       {

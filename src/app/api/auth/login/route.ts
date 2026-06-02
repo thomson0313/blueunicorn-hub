@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const { identifier, password } = parsed.data;
   await connectDB();
 
-  const user = findUserByEmailOrUsername(identifier);
+  const user = await findUserByEmailOrUsername(identifier);
   if (!user || !(await comparePassword(password, user.passwordHash))) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }

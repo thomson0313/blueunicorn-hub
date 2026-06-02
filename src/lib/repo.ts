@@ -1,14 +1,134 @@
+import crypto from "node:crypto";
 import {
-  readDB,
-  writeDB,
-  newId,
-  nowISO,
-  type UserRec,
-  type ProjectRec,
-  type MessageRec,
-  type AlertRec,
-  type Role,
-} from "./store";
+  User,
+  Project,
+  Message,
+  Alert,
+  type UserDoc,
+  type ProjectDoc,
+  type MessageDoc,
+  type AlertDoc,
+} from "./models";
+
+export type Role = "admin" | "member";
+
+export interface UserRec {
+  _id: string;
+  name: string;
+  email: string;
+  username?: string | null;
+  passwordHash: string;
+  role: Role;
+  avatarUrl?: string | null;
+  skills?: string;
+  plan?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectRec {
+  _id: string;
+  owner: string;
+  title: string;
+  description: string;
+  completionRate: number;
+  status: "not_started" | "in_progress" | "completed" | "on_hold";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MessageRec {
+  _id: string;
+  sender: string;
+  channelType: "general" | "dm";
+  recipient?: string | null;
+  dmKey?: string | null;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertRec {
+  _id: string;
+  createdBy: string;
+  title: string;
+  content: string;
+  scheduledAt: string;
+  status: "pending" | "delivered";
+  deliveredAt?: string | null;
+  seenBy: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function dmKeyFor(a: string, b: string): string {
+  return [a, b].sort().join(":");
+}
+
+export function newId(): string {
+  return crypto.randomUUID();
+}
+
+export function nowISO(): string {
+  return new Date().toISOString();
+}
+
+function toUserRec(doc: UserDoc): UserRec {
+  return {
+    _id: String(doc._id),
+    name: doc.name,
+    email: doc.email,
+    username: doc.username ?? null,
+    passwordHash: doc.passwordHash,
+    role: doc.role as Role,
+    avatarUrl: doc.avatarUrl ?? null,
+    skills: doc.skills ?? "",
+    plan: doc.plan ?? "",
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+function toProjectRec(doc: ProjectDoc): ProjectRec {
+  return {
+    _id: String(doc._id),
+    owner: doc.owner,
+    title: doc.title,
+    description: doc.description,
+    completionRate: doc.completionRate,
+    status: doc.status as ProjectRec["status"],
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+function toMessageRec(doc: MessageDoc): MessageRec {
+  return {
+    _id: String(doc._id),
+    sender: doc.sender,
+    channelType: doc.channelType as MessageRec["channelType"],
+    recipient: doc.recipient ?? null,
+    dmKey: doc.dmKey ?? null,
+    content: doc.content,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+function toAlertRec(doc: AlertDoc): AlertRec {
+  return {
+    _id: String(doc._id),
+    createdBy: doc.createdBy,
+    title: doc.title,
+    content: doc.content,
+    scheduledAt: doc.scheduledAt,
+    status: doc.status as AlertRec["status"],
+    deliveredAt: doc.deliveredAt ?? null,
+    seenBy: doc.seenBy ?? [],
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
 
 export type PublicUser = {
   _id: string;
@@ -36,49 +156,54 @@ export function publicUser(u: UserRec): PublicUser {
 
 /* ----------------------------- Users ----------------------------- */
 
-export function findUserById(id: string): UserRec | null {
-  return readDB().users.find((u) => u._id === id) ?? null;
+export async function findUserById(id: string): Promise<UserRec | null> {
+  const doc = await User.findById(id).lean<UserDoc>();
+  return doc ? toUserRec(doc) : null;
 }
 
-export function findUserByEmail(email: string): UserRec | null {
-  const e = email.toLowerCase();
-  return readDB().users.find((u) => u.email === e) ?? null;
+export async function findUserByEmail(email: string): Promise<UserRec | null> {
+  const doc = await User.findOne({ email: email.toLowerCase() }).lean<UserDoc>();
+  return doc ? toUserRec(doc) : null;
 }
 
-export function findUserByEmailOrUsername(identifier: string): UserRec | null {
+export async function findUserByEmailOrUsername(identifier: string): Promise<UserRec | null> {
   const id = identifier.trim();
   const lower = id.toLowerCase();
-  return readDB().users.find((u) => u.email === lower || u.username === id) ?? null;
+  const doc = await User.findOne({ $or: [{ email: lower }, { username: id }] }).lean<UserDoc>();
+  return doc ? toUserRec(doc) : null;
 }
 
-export function emailOrUsernameTaken(email: string, username?: string | null): boolean {
+export async function emailOrUsernameTaken(email: string, username?: string | null): Promise<boolean> {
   const e = email.toLowerCase();
-  return readDB().users.some((u) => u.email === e || (!!username && u.username === username));
+  const clauses: Record<string, string>[] = [{ email: e }];
+  if (username) clauses.push({ username });
+  const count = await User.countDocuments({ $or: clauses });
+  return count > 0;
 }
 
-export function countUsers(): number {
-  return readDB().users.length;
+export async function countUsers(): Promise<number> {
+  return User.countDocuments();
 }
 
-export function listUsers(): UserRec[] {
-  return readDB().users.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+export async function listUsers(): Promise<UserRec[]> {
+  const docs = await User.find().sort({ createdAt: 1 }).lean<UserDoc[]>();
+  return docs.map(toUserRec);
 }
 
-export function listUsersExcept(id: string): UserRec[] {
-  return listUsers().filter((u) => u._id !== id);
+export async function listUsersExcept(id: string): Promise<UserRec[]> {
+  const docs = await User.find({ _id: { $ne: id } }).sort({ createdAt: 1 }).lean<UserDoc[]>();
+  return docs.map(toUserRec);
 }
 
-export function createUser(data: {
+export async function createUser(data: {
   name: string;
   email: string;
   username?: string | null;
   passwordHash: string;
   role: Role;
-}): UserRec {
-  const db = readDB();
+}): Promise<UserRec> {
   const ts = nowISO();
-  const user: UserRec = {
-    _id: newId(),
+  const doc = await User.create({
     name: data.name,
     email: data.email.toLowerCase(),
     username: data.username || null,
@@ -86,84 +211,82 @@ export function createUser(data: {
     role: data.role,
     createdAt: ts,
     updatedAt: ts,
-  };
-  db.users.push(user);
-  writeDB(db);
-  return user;
+  });
+  return toUserRec(doc.toObject() as UserDoc);
 }
 
-export function updateUser(
+export async function updateUser(
   id: string,
   patch: Partial<Pick<UserRec, "name" | "role" | "passwordHash" | "avatarUrl" | "skills" | "plan">>
-): UserRec | null {
-  const db = readDB();
-  const user = db.users.find((u) => u._id === id);
-  if (!user) return null;
-  if (patch.name !== undefined) user.name = patch.name;
-  if (patch.role !== undefined) user.role = patch.role;
-  if (patch.passwordHash !== undefined) user.passwordHash = patch.passwordHash;
-  if (patch.avatarUrl !== undefined) user.avatarUrl = patch.avatarUrl;
-  if (patch.skills !== undefined) user.skills = patch.skills;
-  if (patch.plan !== undefined) user.plan = patch.plan;
-  user.updatedAt = nowISO();
-  writeDB(db);
-  return user;
+): Promise<UserRec | null> {
+  const doc = await User.findByIdAndUpdate(
+    id,
+    { ...patch, updatedAt: nowISO() },
+    { new: true }
+  ).lean<UserDoc>();
+  return doc ? toUserRec(doc) : null;
 }
 
-export function deleteUser(id: string): boolean {
-  const db = readDB();
-  const before = db.users.length;
-  db.users = db.users.filter((u) => u._id !== id);
-  db.projects = db.projects.filter((p) => p.owner !== id);
-  db.messages = db.messages.filter((m) => m.sender !== id && m.recipient !== id);
-  writeDB(db);
-  return db.users.length < before;
+export async function deleteUser(id: string): Promise<boolean> {
+  const user = await User.findByIdAndDelete(id);
+  if (!user) return false;
+  await Promise.all([
+    Project.deleteMany({ owner: id }),
+    Message.deleteMany({ $or: [{ sender: id }, { recipient: id }] }),
+  ]);
+  return true;
 }
 
 /* ---------------------------- Projects ---------------------------- */
 
 type ProjectWithOwner = Omit<ProjectRec, "owner"> & { owner: PublicUser | string };
 
-function attachOwner(p: ProjectRec, users: UserRec[]): ProjectWithOwner {
-  const owner = users.find((u) => u._id === p.owner);
+async function attachOwner(p: ProjectRec, users?: UserRec[]): Promise<ProjectWithOwner> {
+  const owner =
+    users?.find((u) => u._id === p.owner) ??
+    (await findUserById(p.owner));
   return { ...p, owner: owner ? publicUser(owner) : p.owner };
 }
 
-export function listProjectsByOwner(owner: string, populate = false): ProjectWithOwner[] {
-  const db = readDB();
-  const list = db.projects
-    .filter((p) => p.owner === owner)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  return populate ? list.map((p) => attachOwner(p, db.users)) : list;
+export async function listProjectsByOwner(owner: string, populate = false): Promise<ProjectWithOwner[]> {
+  const docs = await Project.find({ owner }).sort({ updatedAt: -1 }).lean<ProjectDoc[]>();
+  const projects = docs.map(toProjectRec);
+  if (!populate) return projects;
+  const users = await listUsers();
+  return Promise.all(projects.map((p) => attachOwner(p, users)));
 }
 
-export function listAllProjects(populate = false): ProjectWithOwner[] {
-  const db = readDB();
-  const list = db.projects.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  return populate ? list.map((p) => attachOwner(p, db.users)) : list;
+export async function listAllProjects(populate = false): Promise<ProjectWithOwner[]> {
+  const docs = await Project.find().sort({ updatedAt: -1 }).lean<ProjectDoc[]>();
+  const projects = docs.map(toProjectRec);
+  if (!populate) return projects;
+  const users = await listUsers();
+  return Promise.all(projects.map((p) => attachOwner(p, users)));
 }
 
-export function projectCountsByOwner(): Map<string, number> {
+export async function projectCountsByOwner(): Promise<Map<string, number>> {
+  const rows = await Project.aggregate<{ _id: string; count: number }>([
+    { $group: { _id: "$owner", count: { $sum: 1 } } },
+  ]);
   const counts = new Map<string, number>();
-  for (const p of readDB().projects) counts.set(p.owner, (counts.get(p.owner) || 0) + 1);
+  for (const row of rows) counts.set(row._id, row.count);
   return counts;
 }
 
-export function findProjectById(id: string): ProjectRec | null {
-  return readDB().projects.find((p) => p._id === id) ?? null;
+export async function findProjectById(id: string): Promise<ProjectRec | null> {
+  const doc = await Project.findById(id).lean<ProjectDoc>();
+  return doc ? toProjectRec(doc) : null;
 }
 
-export function createProject(data: {
+export async function createProject(data: {
   owner: string;
   title: string;
   description?: string;
   completionRate?: number;
   status?: ProjectRec["status"];
-}): ProjectWithOwner {
-  const db = readDB();
+}): Promise<ProjectWithOwner> {
   const ts = nowISO();
-  const project: ProjectRec = {
-    _id: newId(),
+  const doc = await Project.create({
     owner: data.owner,
     title: data.title,
     description: data.description ?? "",
@@ -171,31 +294,25 @@ export function createProject(data: {
     status: data.status ?? "in_progress",
     createdAt: ts,
     updatedAt: ts,
-  };
-  db.projects.push(project);
-  writeDB(db);
-  return attachOwner(project, db.users);
+  });
+  return attachOwner(toProjectRec(doc.toObject() as ProjectDoc));
 }
 
-export function updateProject(
+export async function updateProject(
   id: string,
   patch: Partial<Pick<ProjectRec, "title" | "description" | "completionRate" | "status">>
-): ProjectWithOwner | null {
-  const db = readDB();
-  const project = db.projects.find((p) => p._id === id);
-  if (!project) return null;
-  Object.assign(project, patch);
-  project.updatedAt = nowISO();
-  writeDB(db);
-  return attachOwner(project, db.users);
+): Promise<ProjectWithOwner | null> {
+  const doc = await Project.findByIdAndUpdate(
+    id,
+    { ...patch, updatedAt: nowISO() },
+    { new: true }
+  ).lean<ProjectDoc>();
+  return doc ? attachOwner(toProjectRec(doc)) : null;
 }
 
-export function deleteProject(id: string): boolean {
-  const db = readDB();
-  const before = db.projects.length;
-  db.projects = db.projects.filter((p) => p._id !== id);
-  writeDB(db);
-  return db.projects.length < before;
+export async function deleteProject(id: string): Promise<boolean> {
+  const result = await Project.findByIdAndDelete(id);
+  return !!result;
 }
 
 /* ---------------------------- Messages ---------------------------- */
@@ -204,8 +321,10 @@ export type MessageWithSender = Omit<MessageRec, "sender"> & {
   sender: { _id: string; name: string; role: Role };
 };
 
-function attachSender(m: MessageRec, users: UserRec[]): MessageWithSender {
-  const sender = users.find((u) => u._id === m.sender);
+async function attachSender(m: MessageRec, users?: UserRec[]): Promise<MessageWithSender> {
+  const sender =
+    users?.find((u) => u._id === m.sender) ??
+    (await findUserById(m.sender));
   return {
     ...m,
     sender: sender
@@ -214,17 +333,15 @@ function attachSender(m: MessageRec, users: UserRec[]): MessageWithSender {
   };
 }
 
-export function createMessage(data: {
+export async function createMessage(data: {
   sender: string;
   channelType: "general" | "dm";
   recipient?: string | null;
   dmKey?: string | null;
   content: string;
-}): MessageRec {
-  const db = readDB();
+}): Promise<MessageRec> {
   const ts = nowISO();
-  const message: MessageRec = {
-    _id: newId(),
+  const doc = await Message.create({
     sender: data.sender,
     channelType: data.channelType,
     recipient: data.recipient ?? null,
@@ -232,42 +349,40 @@ export function createMessage(data: {
     content: data.content,
     createdAt: ts,
     updatedAt: ts,
-  };
-  db.messages.push(message);
-  writeDB(db);
-  return message;
+  });
+  return toMessageRec(doc.toObject() as MessageDoc);
 }
 
-export function listGeneralMessages(limit = 200): MessageWithSender[] {
-  const db = readDB();
-  return db.messages
-    .filter((m) => m.channelType === "general")
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .slice(-limit)
-    .map((m) => attachSender(m, db.users));
+export async function listGeneralMessages(limit = 200): Promise<MessageWithSender[]> {
+  const docs = await Message.find({ channelType: "general" })
+    .sort({ createdAt: 1 })
+    .limit(limit)
+    .lean<MessageDoc[]>();
+  const messages = docs.map(toMessageRec);
+  const users = await listUsers();
+  return Promise.all(messages.map((m) => attachSender(m, users)));
 }
 
-export function listDmMessages(dmKey: string, limit = 200): MessageWithSender[] {
-  const db = readDB();
-  return db.messages
-    .filter((m) => m.channelType === "dm" && m.dmKey === dmKey)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .slice(-limit)
-    .map((m) => attachSender(m, db.users));
+export async function listDmMessages(dmKey: string, limit = 200): Promise<MessageWithSender[]> {
+  const docs = await Message.find({ channelType: "dm", dmKey })
+    .sort({ createdAt: 1 })
+    .limit(limit)
+    .lean<MessageDoc[]>();
+  const messages = docs.map(toMessageRec);
+  const users = await listUsers();
+  return Promise.all(messages.map((m) => attachSender(m, users)));
 }
 
 /* ----------------------------- Alerts ----------------------------- */
 
-export function createAlert(data: {
+export async function createAlert(data: {
   createdBy: string;
   title: string;
   content: string;
   scheduledAt: string;
-}): AlertRec {
-  const db = readDB();
+}): Promise<AlertRec> {
   const ts = nowISO();
-  const alert: AlertRec = {
-    _id: newId(),
+  const doc = await Alert.create({
     createdBy: data.createdBy,
     title: data.title,
     content: data.content,
@@ -277,37 +392,30 @@ export function createAlert(data: {
     seenBy: [],
     createdAt: ts,
     updatedAt: ts,
-  };
-  db.alerts.push(alert);
-  writeDB(db);
-  return alert;
+  });
+  return toAlertRec(doc.toObject() as AlertDoc);
 }
 
-export function listAlerts(): AlertRec[] {
-  return readDB().alerts.slice().sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
+export async function listAlerts(): Promise<AlertRec[]> {
+  const docs = await Alert.find().sort({ scheduledAt: -1 }).lean<AlertDoc[]>();
+  return docs.map(toAlertRec);
 }
 
-export function listDueAlerts(): AlertRec[] {
-  const now = Date.now();
-  return readDB().alerts.filter(
-    (a) => a.status === "pending" && new Date(a.scheduledAt).getTime() <= now
-  );
+export async function listDueAlerts(): Promise<AlertRec[]> {
+  const now = new Date().toISOString();
+  const docs = await Alert.find({ status: "pending", scheduledAt: { $lte: now } }).lean<AlertDoc[]>();
+  return docs.map(toAlertRec);
 }
 
-export function markAlertDelivered(id: string): void {
-  const db = readDB();
-  const alert = db.alerts.find((a) => a._id === id);
-  if (!alert) return;
-  alert.status = "delivered";
-  alert.deliveredAt = nowISO();
-  alert.updatedAt = nowISO();
-  writeDB(db);
+export async function markAlertDelivered(id: string): Promise<void> {
+  await Alert.findByIdAndUpdate(id, {
+    status: "delivered",
+    deliveredAt: nowISO(),
+    updatedAt: nowISO(),
+  });
 }
 
-export function deleteAlert(id: string): boolean {
-  const db = readDB();
-  const before = db.alerts.length;
-  db.alerts = db.alerts.filter((a) => a._id !== id);
-  writeDB(db);
-  return db.alerts.length < before;
+export async function deleteAlert(id: string): Promise<boolean> {
+  const result = await Alert.findByIdAndDelete(id);
+  return !!result;
 }

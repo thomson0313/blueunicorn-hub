@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     await fs.writeFile(path.join(uploadsDir, filename), buffer);
 
     const avatarUrl = `/uploads/${filename}`;
-    const user = updateUser(me.sub, { avatarUrl });
+    const user = await updateUser(me.sub, { avatarUrl });
     if (!user) throw new HttpError(404, "User not found");
 
     return NextResponse.json({ profile: publicUser(user) });

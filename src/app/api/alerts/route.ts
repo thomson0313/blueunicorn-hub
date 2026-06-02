@@ -16,7 +16,7 @@ export async function GET() {
   try {
     await requireAdmin();
     await connectDB();
-    return NextResponse.json({ alerts: listAlerts() });
+    return NextResponse.json({ alerts: await listAlerts() });
   } catch (err) {
     return handleError(err);
   }
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     await connectDB();
 
     const scheduledAt = new Date(parsed.data.scheduledAt);
-    const alert = createAlert({
+    const alert = await createAlert({
       title: parsed.data.title,
       content: parsed.data.content,
       scheduledAt: scheduledAt.toISOString(),
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
           content: alert.content,
           scheduledAt: alert.scheduledAt,
         });
-        markAlertDelivered(alert._id);
+        await markAlertDelivered(alert._id);
       }
     }
 

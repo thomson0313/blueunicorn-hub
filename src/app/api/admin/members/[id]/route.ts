@@ -25,7 +25,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     }
     await connectDB();
 
-    const user = findUserById(id);
+    const user = await findUserById(id);
     if (!user) throw new HttpError(404, "Member not found");
 
     // Prevent an admin from demoting themselves (avoid lockout).
@@ -33,7 +33,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       throw new HttpError(400, "You cannot remove your own admin role");
     }
 
-    const updated = updateUser(id, {
+    const updated = await updateUser(id, {
       name: parsed.data.name,
       role: parsed.data.role,
       passwordHash: parsed.data.password ? await hashPassword(parsed.data.password) : undefined,
@@ -62,10 +62,10 @@ export async function DELETE(_req: Request, { params }: Ctx) {
 
     if (id === admin.sub) throw new HttpError(400, "You cannot delete your own account");
 
-    const user = findUserById(id);
+    const user = await findUserById(id);
     if (!user) throw new HttpError(404, "Member not found");
 
-    deleteUser(id);
+    await deleteUser(id);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return handleError(err);

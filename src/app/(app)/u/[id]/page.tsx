@@ -13,7 +13,7 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
   const session = (await getSession())!;
   await connectDB();
 
-  const user = findUserById(id);
+  const user = await findUserById(id);
   if (!user) notFound();
 
   const profile = publicUser(user);
@@ -24,7 +24,7 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
 
   // Admins (and the owner) can see this member's project progress.
   const canSeeProjects = session.role === "admin" || session.sub === id;
-  const projects = canSeeProjects ? listProjectsByOwner(id) : [];
+  const projects = canSeeProjects ? await listProjectsByOwner(id) : [];
 
   return (
     <div className="max-w-2xl space-y-6">

@@ -11,7 +11,7 @@ export async function GET() {
   try {
     const me = await requireUser();
     await connectDB();
-    const user = findUserById(me.sub);
+    const user = await findUserById(me.sub);
     if (!user) throw new HttpError(404, "User not found");
     return NextResponse.json({ profile: publicUser(user) });
   } catch (err) {
@@ -36,7 +36,7 @@ export async function PATCH(req: Request) {
     }
     await connectDB();
 
-    const user = updateUser(me.sub, parsed.data);
+    const user = await updateUser(me.sub, parsed.data);
     if (!user) throw new HttpError(404, "User not found");
 
     const res = NextResponse.json({ profile: publicUser(user) });

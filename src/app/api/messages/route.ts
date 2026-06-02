@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
-import { listGeneralMessages, listDmMessages } from "@/lib/repo";
-import { dmKeyFor } from "@/lib/store";
+import { listGeneralMessages, listDmMessages, dmKeyFor } from "@/lib/repo";
 import { requireUser, handleError } from "@/lib/api-guard";
 
 // GET /api/messages?channel=general
@@ -17,10 +16,10 @@ export async function GET(req: Request) {
     if (channel === "dm") {
       const withUser = searchParams.get("with");
       if (!withUser) return NextResponse.json({ messages: [] });
-      return NextResponse.json({ messages: listDmMessages(dmKeyFor(me.sub, withUser)) });
+      return NextResponse.json({ messages: await listDmMessages(dmKeyFor(me.sub, withUser)) });
     }
 
-    return NextResponse.json({ messages: listGeneralMessages() });
+    return NextResponse.json({ messages: await listGeneralMessages() });
   } catch (err) {
     return handleError(err);
   }

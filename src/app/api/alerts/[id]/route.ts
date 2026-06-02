@@ -11,7 +11,7 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     await requireAdmin();
     const { id } = await params;
     await connectDB();
-    if (!deleteAlert(id)) throw new HttpError(404, "Alert not found");
+    if (!(await deleteAlert(id))) throw new HttpError(404, "Alert not found");
     return NextResponse.json({ ok: true });
   } catch (err) {
     return handleError(err);

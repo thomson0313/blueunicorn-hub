@@ -9,7 +9,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     await requireUser();
     const { id } = await params;
     await connectDB();
-    const user = findUserById(id);
+    const user = await findUserById(id);
     if (!user) throw new HttpError(404, "User not found");
     return NextResponse.json({ profile: publicUser(user) });
   } catch (err) {

@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const me = await requireUser();
     await connectDB();
-    const users = listUsersExcept(me.sub).map(publicUser);
+    const users = (await listUsersExcept(me.sub)).map(publicUser);
     return NextResponse.json({ users });
   } catch (err) {
     return handleError(err);

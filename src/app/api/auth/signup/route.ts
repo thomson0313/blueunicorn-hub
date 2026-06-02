@@ -13,34 +13,40 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid input" }, { status: 400 });
+  try {
+    const body = await req.json().catch(() => null);
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid input" }, { status: 400 });
+    }
+
+    const { name, email, username, password } = parsed.data;
+    await connectDB();
+
+    if (await emailOrUsernameTaken(email, username || null)) {
+      return NextResponse.json({ error: "Email or username already in use" }, { status: 409 });
+    }
+
+    // The very first registered user becomes the admin.
+    const role: "admin" | "member" = (await countUsers()) === 0 ? "admin" : "member";
+
+    const passwordHash = await hashPassword(password);
+    const user = await createUser({ name, email, username: username || null, passwordHash, role });
+
+    const payload: SessionPayload = {
+      sub: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    };
+    const token = await signSession(payload);
+
+    const res = NextResponse.json({ user: payload });
+    setSessionCookie(res, token);
+    return res;
+  } catch (err) {
+    console.error("[signup]", err);
+    const message = err instanceof Error ? err.message : "Signup failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const { name, email, username, password } = parsed.data;
-  await connectDB();
-
-  if (emailOrUsernameTaken(email, username || null)) {
-    return NextResponse.json({ error: "Email or username already in use" }, { status: 409 });
-  }
-
-  // The very first registered user becomes the admin.
-  const role: "admin" | "member" = countUsers() === 0 ? "admin" : "member";
-
-  const passwordHash = await hashPassword(password);
-  const user = createUser({ name, email, username: username || null, passwordHash, role });
-
-  const payload: SessionPayload = {
-    sub: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-  };
-  const token = await signSession(payload);
-
-  const res = NextResponse.json({ user: payload });
-  setSessionCookie(res, token);
-  return res;
 }

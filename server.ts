@@ -1,3 +1,4 @@
+import { loadEnvConfig } from "@next/env";
 import "./src/lib/als-polyfill";
 import { createServer } from "node:http";
 import { parse } from "node:url";
@@ -5,16 +6,12 @@ import next from "next";
 import { Server as SocketIOServer, type Socket } from "socket.io";
 import { parse as parseCookie } from "cookie";
 import cron from "node-cron";
-import { loadEnvConfig } from "@next/env";
+import { connectDB } from "./src/lib/db";
+import { verifySession, COOKIE_NAME, type SessionPayload } from "./src/lib/auth";
+import { dmKeyFor, createMessage, listDueAlerts, markAlertDelivered } from "./src/lib/repo";
 
 // Load .env.local / .env so this standalone process has the same env as Next.
 loadEnvConfig(process.cwd());
-
-import { connectDB } from "./src/lib/db";
-import { ensureAdminSeed } from "./src/lib/seed";
-import { verifySession, COOKIE_NAME, type SessionPayload } from "./src/lib/auth";
-import { dmKeyFor } from "./src/lib/store";
-import { createMessage, listDueAlerts, markAlertDelivered } from "./src/lib/repo";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -33,11 +30,9 @@ function onlineUserIds(): string[] {
 }
 
 app.prepare().then(async () => {
-  await connectDB()
-    .then(() => ensureAdminSeed())
-    .catch((err) => {
-      console.error("[server] Data store initialization failed:", err.message);
-    });
+  await connectDB().catch((err) => {
+    console.error("[server] Data store initialization failed:", err.message);
+  });
 
   const httpServer = createServer((req, res) => {
     const parsedUrl = parse(req.url || "", true);
@@ -74,10 +69,10 @@ app.prepare().then(async () => {
     onlineCounts.set(userId, (onlineCounts.get(userId) || 0) + 1);
     io.emit("presence:update", onlineUserIds());
 
-    socket.on("general:send", (payload: { content: string }) => {
+    socket.on("general:send", async (payload: { content: string }) => {
       const content = (payload?.content || "").trim();
       if (!content) return;
-      const doc = createMessage({ sender: userId, channelType: "general", content });
+      const doc = await createMessage({ sender: userId, channelType: "general", content });
       io.to("general").emit("general:message", {
         _id: doc._id,
         sender: { _id: userId, name: user.name, role: user.role },
@@ -86,11 +81,11 @@ app.prepare().then(async () => {
       });
     });
 
-    socket.on("dm:send", (payload: { to: string; content: string }) => {
+    socket.on("dm:send", async (payload: { to: string; content: string }) => {
       const content = (payload?.content || "").trim();
       const to = payload?.to;
       if (!content || !to) return;
-      const doc = createMessage({
+      const doc = await createMessage({
         sender: userId,
         channelType: "dm",
         recipient: to,
@@ -120,9 +115,9 @@ app.prepare().then(async () => {
   (globalThis as unknown as { _io?: SocketIOServer })._io = io;
 
   // Alert scheduler: every minute, deliver any pending alerts whose time has come.
-  cron.schedule("* * * * *", () => {
+  cron.schedule("* * * * *", async () => {
     try {
-      const due = listDueAlerts();
+      const due = await listDueAlerts();
       for (const alert of due) {
         io.emit("alert:new", {
           _id: alert._id,
@@ -130,7 +125,7 @@ app.prepare().then(async () => {
           content: alert.content,
           scheduledAt: alert.scheduledAt,
         });
-        markAlertDelivered(alert._id);
+        await markAlertDelivered(alert._id);
       }
     } catch (err) {
       console.error("[scheduler] alert delivery error:", (err as Error).message);

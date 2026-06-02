@@ -25,11 +25,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
     }
     await connectDB();
 
-    const project = findProjectById(id);
+    const project = await findProjectById(id);
     if (!project) throw new HttpError(404, "Project not found");
     if (project.owner !== user.sub) throw new HttpError(403, "You can only edit your own projects");
 
-    const updated = updateProject(id, parsed.data);
+    const updated = await updateProject(id, parsed.data);
     return NextResponse.json({ project: updated });
   } catch (err) {
     return handleError(err);
@@ -43,11 +43,11 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     const { id } = await params;
     await connectDB();
 
-    const project = findProjectById(id);
+    const project = await findProjectById(id);
     if (!project) throw new HttpError(404, "Project not found");
     if (project.owner !== user.sub) throw new HttpError(403, "You can only delete your own projects");
 
-    deleteProject(id);
+    await deleteProject(id);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return handleError(err);

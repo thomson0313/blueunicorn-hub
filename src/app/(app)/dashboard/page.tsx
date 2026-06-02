@@ -23,7 +23,7 @@ export default async function DashboardPage() {
   await connectDB();
 
   if (session.role === "member") {
-    const projects = listProjectsByOwner(session.sub) as unknown as ProjectType[];
+    const projects = (await listProjectsByOwner(session.sub)) as unknown as ProjectType[];
     const overall = avg(projects.map((p) => p.completionRate));
 
     return (
@@ -63,10 +63,10 @@ export default async function DashboardPage() {
   }
 
   // Admin view: all members' progress grouped by member.
-  const members = listUsers()
+  const members = (await listUsers())
     .map(publicUser)
     .sort((a, b) => a.name.localeCompare(b.name)) as unknown as PublicUser[];
-  const projects = listAllProjects() as unknown as ProjectType[];
+  const projects = (await listAllProjects()) as unknown as ProjectType[];
 
   const byOwner = new Map<string, ProjectType[]>();
   for (const p of projects) {

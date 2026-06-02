@@ -18,7 +18,7 @@ export async function GET() {
     await connectDB();
 
     const projects =
-      user.role === "admin" ? listAllProjects(true) : listProjectsByOwner(user.sub, true);
+      user.role === "admin" ? await listAllProjects(true) : await listProjectsByOwner(user.sub, true);
 
     return NextResponse.json({ projects });
   } catch (err) {
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     }
     await connectDB();
 
-    const project = createProject({ ...parsed.data, owner: user.sub });
+    const project = await createProject({ ...parsed.data, owner: user.sub });
     return NextResponse.json({ project }, { status: 201 });
   } catch (err) {
     return handleError(err);

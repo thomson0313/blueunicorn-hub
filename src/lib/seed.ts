@@ -7,15 +7,15 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@blunicorn.app";
 const ADMIN_NAME = process.env.ADMIN_NAME || "Blue Unicorn";
 
 /**
- * Ensure the built-in Blunicorn admin account exists. Runs on server startup.
+ * Ensure the built-in Blunicorn admin account exists. Runs after DB connect.
  * Idempotent: if the admin already exists it is left untouched.
  */
 export async function ensureAdminSeed(): Promise<void> {
-  const existing = findUserByEmailOrUsername(ADMIN_USERNAME);
+  const existing = await findUserByEmailOrUsername(ADMIN_USERNAME);
   if (existing) return;
 
   const passwordHash = await hashPassword(ADMIN_PASSWORD);
-  createUser({
+  await createUser({
     name: ADMIN_NAME,
     username: ADMIN_USERNAME,
     email: ADMIN_EMAIL,
