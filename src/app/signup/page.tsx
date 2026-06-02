@@ -51,7 +51,7 @@ export default function SignupPage() {
 
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <h2 className="text-xl font-bold text-slate-900">Create your account</h2>
-          <p className="text-slate-500 text-sm mt-1 mb-6">The first account created becomes the workspace admin.</p>
+          <p className="text-slate-500 text-sm mt-1 mb-6">Create your account to become a member of BlueUnicorn</p>
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Full name</label>
@@ -73,7 +73,7 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-3 transition shadow-sm"
+              className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-3 transition shadow-sm cursor-pointer"
             >
               {loading ? "Creating..." : "Create account"}
             </button>
