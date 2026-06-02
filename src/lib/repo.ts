@@ -1,15 +1,6 @@
 import crypto from "node:crypto";
-import {
-  User,
-  Project,
-  Message,
-  Alert,
-  Presence,
-  type UserDoc,
-  type ProjectDoc,
-  type MessageDoc,
-  type AlertDoc,
-} from "./models";
+import type { PostgrestError } from "@supabase/supabase-js";
+import { getSupabase } from "./supabase";
 
 export type Role = "admin" | "member";
 
@@ -62,6 +53,59 @@ export interface AlertRec {
   updatedAt: string;
 }
 
+type UserRow = {
+  id: string;
+  name: string;
+  email: string;
+  username: string | null;
+  password_hash: string;
+  role: string;
+  avatar_url: string | null;
+  skills: string;
+  plan: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type ProjectRow = {
+  id: string;
+  owner: string;
+  title: string;
+  description: string;
+  completion_rate: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type MessageRow = {
+  id: string;
+  sender: string;
+  channel_type: string;
+  recipient: string | null;
+  dm_key: string | null;
+  content: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type AlertRow = {
+  id: string;
+  created_by: string;
+  title: string;
+  content: string;
+  scheduled_at: string;
+  status: string;
+  delivered_at: string | null;
+  seen_by: string[] | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function dbError(error: PostgrestError | null): void {
+  if (error) throw new Error(error.message);
+}
+
 export function dmKeyFor(a: string, b: string): string {
   return [a, b].sort().join(":");
 }
@@ -74,60 +118,60 @@ export function nowISO(): string {
   return new Date().toISOString();
 }
 
-function toUserRec(doc: UserDoc): UserRec {
+function toUserRec(row: UserRow): UserRec {
   return {
-    _id: String(doc._id),
-    name: doc.name,
-    email: doc.email,
-    username: doc.username ?? null,
-    passwordHash: doc.passwordHash,
-    role: doc.role as Role,
-    avatarUrl: doc.avatarUrl ?? null,
-    skills: doc.skills ?? "",
-    plan: doc.plan ?? "",
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
+    _id: row.id,
+    name: row.name,
+    email: row.email,
+    username: row.username,
+    passwordHash: row.password_hash,
+    role: row.role as Role,
+    avatarUrl: row.avatar_url,
+    skills: row.skills ?? "",
+    plan: row.plan ?? "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
-function toProjectRec(doc: ProjectDoc): ProjectRec {
+function toProjectRec(row: ProjectRow): ProjectRec {
   return {
-    _id: String(doc._id),
-    owner: doc.owner,
-    title: doc.title,
-    description: doc.description,
-    completionRate: doc.completionRate,
-    status: doc.status as ProjectRec["status"],
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
+    _id: row.id,
+    owner: row.owner,
+    title: row.title,
+    description: row.description,
+    completionRate: row.completion_rate,
+    status: row.status as ProjectRec["status"],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
-function toMessageRec(doc: MessageDoc): MessageRec {
+function toMessageRec(row: MessageRow): MessageRec {
   return {
-    _id: String(doc._id),
-    sender: doc.sender,
-    channelType: doc.channelType as MessageRec["channelType"],
-    recipient: doc.recipient ?? null,
-    dmKey: doc.dmKey ?? null,
-    content: doc.content,
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
+    _id: row.id,
+    sender: row.sender,
+    channelType: row.channel_type as MessageRec["channelType"],
+    recipient: row.recipient,
+    dmKey: row.dm_key,
+    content: row.content,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
-function toAlertRec(doc: AlertDoc): AlertRec {
+function toAlertRec(row: AlertRow): AlertRec {
   return {
-    _id: String(doc._id),
-    createdBy: doc.createdBy,
-    title: doc.title,
-    content: doc.content,
-    scheduledAt: doc.scheduledAt,
-    status: doc.status as AlertRec["status"],
-    deliveredAt: doc.deliveredAt ?? null,
-    seenBy: doc.seenBy ?? [],
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
+    _id: row.id,
+    createdBy: row.created_by,
+    title: row.title,
+    content: row.content,
+    scheduledAt: row.scheduled_at,
+    status: row.status as AlertRec["status"],
+    deliveredAt: row.delivered_at,
+    seenBy: row.seen_by ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -158,42 +202,66 @@ export function publicUser(u: UserRec): PublicUser {
 /* ----------------------------- Users ----------------------------- */
 
 export async function findUserById(id: string): Promise<UserRec | null> {
-  const doc = await User.findById(id).lean<UserDoc>();
-  return doc ? toUserRec(doc) : null;
+  const { data, error } = await getSupabase().from("users").select("*").eq("id", id).maybeSingle();
+  dbError(error);
+  return data ? toUserRec(data as UserRow) : null;
 }
 
 export async function findUserByEmail(email: string): Promise<UserRec | null> {
-  const doc = await User.findOne({ email: email.toLowerCase() }).lean<UserDoc>();
-  return doc ? toUserRec(doc) : null;
+  const { data, error } = await getSupabase()
+    .from("users")
+    .select("*")
+    .eq("email", email.toLowerCase())
+    .maybeSingle();
+  dbError(error);
+  return data ? toUserRec(data as UserRow) : null;
 }
 
 export async function findUserByEmailOrUsername(identifier: string): Promise<UserRec | null> {
   const id = identifier.trim();
   const lower = id.toLowerCase();
-  const doc = await User.findOne({ $or: [{ email: lower }, { username: id }] }).lean<UserDoc>();
-  return doc ? toUserRec(doc) : null;
+  const { data, error } = await getSupabase()
+    .from("users")
+    .select("*")
+    .or(`email.eq.${lower},username.eq.${id}`)
+    .maybeSingle();
+  dbError(error);
+  return data ? toUserRec(data as UserRow) : null;
 }
 
 export async function emailOrUsernameTaken(email: string, username?: string | null): Promise<boolean> {
   const e = email.toLowerCase();
-  const clauses: Record<string, string>[] = [{ email: e }];
-  if (username) clauses.push({ username });
-  const count = await User.countDocuments({ $or: clauses });
-  return count > 0;
+  const filter = username ? `email.eq.${e},username.eq.${username}` : `email.eq.${e}`;
+  const { count, error } = await getSupabase()
+    .from("users")
+    .select("*", { count: "exact", head: true })
+    .or(filter);
+  dbError(error);
+  return (count ?? 0) > 0;
 }
 
 export async function countUsers(): Promise<number> {
-  return User.countDocuments();
+  const { count, error } = await getSupabase()
+    .from("users")
+    .select("*", { count: "exact", head: true });
+  dbError(error);
+  return count ?? 0;
 }
 
 export async function listUsers(): Promise<UserRec[]> {
-  const docs = await User.find().sort({ createdAt: 1 }).lean<UserDoc[]>();
-  return docs.map(toUserRec);
+  const { data, error } = await getSupabase().from("users").select("*").order("created_at", { ascending: true });
+  dbError(error);
+  return (data as UserRow[]).map(toUserRec);
 }
 
 export async function listUsersExcept(id: string): Promise<UserRec[]> {
-  const docs = await User.find({ _id: { $ne: id } }).sort({ createdAt: 1 }).lean<UserDoc[]>();
-  return docs.map(toUserRec);
+  const { data, error } = await getSupabase()
+    .from("users")
+    .select("*")
+    .neq("id", id)
+    .order("created_at", { ascending: true });
+  dbError(error);
+  return (data as UserRow[]).map(toUserRec);
 }
 
 export async function createUser(data: {
@@ -204,38 +272,44 @@ export async function createUser(data: {
   role: Role;
 }): Promise<UserRec> {
   const ts = nowISO();
-  const doc = await User.create({
+  const row = {
+    id: newId(),
     name: data.name,
     email: data.email.toLowerCase(),
     username: data.username || null,
-    passwordHash: data.passwordHash,
+    password_hash: data.passwordHash,
     role: data.role,
-    createdAt: ts,
-    updatedAt: ts,
-  });
-  return toUserRec(doc.toObject() as UserDoc);
+    skills: "",
+    plan: "",
+    created_at: ts,
+    updated_at: ts,
+  };
+  const { data: created, error } = await getSupabase().from("users").insert(row).select().single();
+  dbError(error);
+  return toUserRec(created as UserRow);
 }
 
 export async function updateUser(
   id: string,
   patch: Partial<Pick<UserRec, "name" | "role" | "passwordHash" | "avatarUrl" | "skills" | "plan">>
 ): Promise<UserRec | null> {
-  const doc = await User.findByIdAndUpdate(
-    id,
-    { ...patch, updatedAt: nowISO() },
-    { new: true }
-  ).lean<UserDoc>();
-  return doc ? toUserRec(doc) : null;
+  const payload: Record<string, unknown> = { updated_at: nowISO() };
+  if (patch.name !== undefined) payload.name = patch.name;
+  if (patch.role !== undefined) payload.role = patch.role;
+  if (patch.passwordHash !== undefined) payload.password_hash = patch.passwordHash;
+  if (patch.avatarUrl !== undefined) payload.avatar_url = patch.avatarUrl;
+  if (patch.skills !== undefined) payload.skills = patch.skills;
+  if (patch.plan !== undefined) payload.plan = patch.plan;
+
+  const { data, error } = await getSupabase().from("users").update(payload).eq("id", id).select().maybeSingle();
+  dbError(error);
+  return data ? toUserRec(data as UserRow) : null;
 }
 
 export async function deleteUser(id: string): Promise<boolean> {
-  const user = await User.findByIdAndDelete(id);
-  if (!user) return false;
-  await Promise.all([
-    Project.deleteMany({ owner: id }),
-    Message.deleteMany({ $or: [{ sender: id }, { recipient: id }] }),
-  ]);
-  return true;
+  const { data, error } = await getSupabase().from("users").delete().eq("id", id).select("id").maybeSingle();
+  dbError(error);
+  return !!data;
 }
 
 /* ---------------------------- Projects ---------------------------- */
@@ -244,39 +318,47 @@ type ProjectWithOwner = Omit<ProjectRec, "owner"> & { owner: PublicUser | string
 
 async function attachOwner(p: ProjectRec, users?: UserRec[]): Promise<ProjectWithOwner> {
   const owner =
-    users?.find((u) => u._id === p.owner) ??
-    (await findUserById(p.owner));
+    users?.find((u) => u._id === p.owner) ?? (await findUserById(p.owner));
   return { ...p, owner: owner ? publicUser(owner) : p.owner };
 }
 
 export async function listProjectsByOwner(owner: string, populate = false): Promise<ProjectWithOwner[]> {
-  const docs = await Project.find({ owner }).sort({ updatedAt: -1 }).lean<ProjectDoc[]>();
-  const projects = docs.map(toProjectRec);
+  const { data, error } = await getSupabase()
+    .from("projects")
+    .select("*")
+    .eq("owner", owner)
+    .order("updated_at", { ascending: false });
+  dbError(error);
+  const projects = (data as ProjectRow[]).map(toProjectRec);
   if (!populate) return projects;
   const users = await listUsers();
   return Promise.all(projects.map((p) => attachOwner(p, users)));
 }
 
 export async function listAllProjects(populate = false): Promise<ProjectWithOwner[]> {
-  const docs = await Project.find().sort({ updatedAt: -1 }).lean<ProjectDoc[]>();
-  const projects = docs.map(toProjectRec);
+  const { data, error } = await getSupabase().from("projects").select("*").order("updated_at", { ascending: false });
+  dbError(error);
+  const projects = (data as ProjectRow[]).map(toProjectRec);
   if (!populate) return projects;
   const users = await listUsers();
   return Promise.all(projects.map((p) => attachOwner(p, users)));
 }
 
 export async function projectCountsByOwner(): Promise<Map<string, number>> {
-  const rows = await Project.aggregate<{ _id: string; count: number }>([
-    { $group: { _id: "$owner", count: { $sum: 1 } } },
-  ]);
+  const { data, error } = await getSupabase().from("projects").select("owner");
+  dbError(error);
   const counts = new Map<string, number>();
-  for (const row of rows) counts.set(row._id, row.count);
+  for (const row of data ?? []) {
+    const owner = (row as { owner: string }).owner;
+    counts.set(owner, (counts.get(owner) || 0) + 1);
+  }
   return counts;
 }
 
 export async function findProjectById(id: string): Promise<ProjectRec | null> {
-  const doc = await Project.findById(id).lean<ProjectDoc>();
-  return doc ? toProjectRec(doc) : null;
+  const { data, error } = await getSupabase().from("projects").select("*").eq("id", id).maybeSingle();
+  dbError(error);
+  return data ? toProjectRec(data as ProjectRow) : null;
 }
 
 export async function createProject(data: {
@@ -287,33 +369,40 @@ export async function createProject(data: {
   status?: ProjectRec["status"];
 }): Promise<ProjectWithOwner> {
   const ts = nowISO();
-  const doc = await Project.create({
+  const row = {
+    id: newId(),
     owner: data.owner,
     title: data.title,
     description: data.description ?? "",
-    completionRate: data.completionRate ?? 0,
+    completion_rate: data.completionRate ?? 0,
     status: data.status ?? "in_progress",
-    createdAt: ts,
-    updatedAt: ts,
-  });
-  return attachOwner(toProjectRec(doc.toObject() as ProjectDoc));
+    created_at: ts,
+    updated_at: ts,
+  };
+  const { data: created, error } = await getSupabase().from("projects").insert(row).select().single();
+  dbError(error);
+  return attachOwner(toProjectRec(created as ProjectRow));
 }
 
 export async function updateProject(
   id: string,
   patch: Partial<Pick<ProjectRec, "title" | "description" | "completionRate" | "status">>
 ): Promise<ProjectWithOwner | null> {
-  const doc = await Project.findByIdAndUpdate(
-    id,
-    { ...patch, updatedAt: nowISO() },
-    { new: true }
-  ).lean<ProjectDoc>();
-  return doc ? attachOwner(toProjectRec(doc)) : null;
+  const payload: Record<string, unknown> = { updated_at: nowISO() };
+  if (patch.title !== undefined) payload.title = patch.title;
+  if (patch.description !== undefined) payload.description = patch.description;
+  if (patch.completionRate !== undefined) payload.completion_rate = patch.completionRate;
+  if (patch.status !== undefined) payload.status = patch.status;
+
+  const { data, error } = await getSupabase().from("projects").update(payload).eq("id", id).select().maybeSingle();
+  dbError(error);
+  return data ? attachOwner(toProjectRec(data as ProjectRow)) : null;
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
-  const result = await Project.findByIdAndDelete(id);
-  return !!result;
+  const { data, error } = await getSupabase().from("projects").delete().eq("id", id).select("id").maybeSingle();
+  dbError(error);
+  return !!data;
 }
 
 /* ---------------------------- Messages ---------------------------- */
@@ -324,14 +413,18 @@ export type MessageWithSender = Omit<MessageRec, "sender"> & {
 
 async function attachSender(m: MessageRec, users?: UserRec[]): Promise<MessageWithSender> {
   const sender =
-    users?.find((u) => u._id === m.sender) ??
-    (await findUserById(m.sender));
+    users?.find((u) => u._id === m.sender) ?? (await findUserById(m.sender));
   return {
     ...m,
     sender: sender
       ? { _id: sender._id, name: sender.name, role: sender.role }
       : { _id: m.sender, name: "Unknown", role: "member" },
   };
+}
+
+async function attachSenders(messages: MessageRec[]): Promise<MessageWithSender[]> {
+  const users = await listUsers();
+  return Promise.all(messages.map((m) => attachSender(m, users)));
 }
 
 export async function createMessage(data: {
@@ -342,16 +435,19 @@ export async function createMessage(data: {
   content: string;
 }): Promise<MessageRec> {
   const ts = nowISO();
-  const doc = await Message.create({
+  const row = {
+    id: newId(),
     sender: data.sender,
-    channelType: data.channelType,
+    channel_type: data.channelType,
     recipient: data.recipient ?? null,
-    dmKey: data.dmKey ?? null,
+    dm_key: data.dmKey ?? null,
     content: data.content,
-    createdAt: ts,
-    updatedAt: ts,
-  });
-  return toMessageRec(doc.toObject() as MessageDoc);
+    created_at: ts,
+    updated_at: ts,
+  };
+  const { data: created, error } = await getSupabase().from("messages").insert(row).select().single();
+  dbError(error);
+  return toMessageRec(created as MessageRow);
 }
 
 export async function createGeneralMessage(
@@ -378,57 +474,66 @@ export async function createDmMessage(
 }
 
 export async function listGeneralMessages(limit = 200): Promise<MessageWithSender[]> {
-  const docs = await Message.find({ channelType: "general" })
-    .sort({ createdAt: 1 })
-    .limit(limit)
-    .lean<MessageDoc[]>();
-  const messages = docs.map(toMessageRec);
-  const users = await listUsers();
-  return Promise.all(messages.map((m) => attachSender(m, users)));
+  const { data, error } = await getSupabase()
+    .from("messages")
+    .select("*")
+    .eq("channel_type", "general")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  dbError(error);
+  return attachSenders((data as MessageRow[]).map(toMessageRec));
 }
 
 export async function listDmMessages(dmKey: string, limit = 200): Promise<MessageWithSender[]> {
-  const docs = await Message.find({ channelType: "dm", dmKey })
-    .sort({ createdAt: 1 })
-    .limit(limit)
-    .lean<MessageDoc[]>();
-  const messages = docs.map(toMessageRec);
-  const users = await listUsers();
-  return Promise.all(messages.map((m) => attachSender(m, users)));
+  const { data, error } = await getSupabase()
+    .from("messages")
+    .select("*")
+    .eq("channel_type", "dm")
+    .eq("dm_key", dmKey)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  dbError(error);
+  return attachSenders((data as MessageRow[]).map(toMessageRec));
 }
 
 export async function listGeneralMessagesSince(
   since: string,
   limit = 100
 ): Promise<MessageWithSender[]> {
-  const docs = await Message.find({ channelType: "general", createdAt: { $gt: since } })
-    .sort({ createdAt: 1 })
-    .limit(limit)
-    .lean<MessageDoc[]>();
-  const messages = docs.map(toMessageRec);
-  const users = await listUsers();
-  return Promise.all(messages.map((m) => attachSender(m, users)));
+  const { data, error } = await getSupabase()
+    .from("messages")
+    .select("*")
+    .eq("channel_type", "general")
+    .gt("created_at", since)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  dbError(error);
+  return attachSenders((data as MessageRow[]).map(toMessageRec));
 }
 
-/** Recent messages relevant to a user (for polling notifications). */
 export async function listInboxMessagesSince(
   userId: string,
   since: string,
   limit = 50
 ): Promise<MessageWithSender[]> {
-  const docs = await Message.find({
-    createdAt: { $gt: since },
-    $or: [
-      { channelType: "general" },
-      { channelType: "dm", $or: [{ sender: userId }, { recipient: userId }] },
-    ],
-  })
-    .sort({ createdAt: 1 })
-    .limit(limit)
-    .lean<MessageDoc[]>();
-  const messages = docs.map(toMessageRec);
-  const users = await listUsers();
-  return Promise.all(messages.map((m) => attachSender(m, users)));
+  const sb = getSupabase();
+  const [generalRes, dmRes] = await Promise.all([
+    sb.from("messages").select("*").eq("channel_type", "general").gt("created_at", since),
+    sb
+      .from("messages")
+      .select("*")
+      .eq("channel_type", "dm")
+      .gt("created_at", since)
+      .or(`sender.eq.${userId},recipient.eq.${userId}`),
+  ]);
+  dbError(generalRes.error);
+  dbError(dmRes.error);
+
+  const merged = [...(generalRes.data as MessageRow[]), ...(dmRes.data as MessageRow[])]
+    .map(toMessageRec)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .slice(-limit);
+  return attachSenders(merged);
 }
 
 export async function listDmMessagesSince(
@@ -436,27 +541,33 @@ export async function listDmMessagesSince(
   since: string,
   limit = 100
 ): Promise<MessageWithSender[]> {
-  const docs = await Message.find({ channelType: "dm", dmKey, createdAt: { $gt: since } })
-    .sort({ createdAt: 1 })
-    .limit(limit)
-    .lean<MessageDoc[]>();
-  const messages = docs.map(toMessageRec);
-  const users = await listUsers();
-  return Promise.all(messages.map((m) => attachSender(m, users)));
+  const { data, error } = await getSupabase()
+    .from("messages")
+    .select("*")
+    .eq("channel_type", "dm")
+    .eq("dm_key", dmKey)
+    .gt("created_at", since)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  dbError(error);
+  return attachSenders((data as MessageRow[]).map(toMessageRec));
 }
 
 export async function touchPresence(userId: string): Promise<void> {
-  await Presence.findByIdAndUpdate(
-    userId,
-    { lastSeen: nowISO() },
-    { upsert: true, setDefaultsOnInsert: true }
-  );
+  const { error } = await getSupabase()
+    .from("presence")
+    .upsert({ user_id: userId, last_seen: nowISO() });
+  dbError(error);
 }
 
 export async function listOnlineUserIds(maxAgeMs = 90_000): Promise<string[]> {
   const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
-  const docs = await Presence.find({ lastSeen: { $gte: cutoff } }).lean<{ _id: string }[]>();
-  return docs.map((d) => String(d._id));
+  const { data, error } = await getSupabase()
+    .from("presence")
+    .select("user_id")
+    .gte("last_seen", cutoff);
+  dbError(error);
+  return (data ?? []).map((row) => (row as { user_id: string }).user_id);
 }
 
 /* ----------------------------- Alerts ----------------------------- */
@@ -468,59 +579,75 @@ export async function createAlert(data: {
   scheduledAt: string;
 }): Promise<AlertRec> {
   const ts = nowISO();
-  const doc = await Alert.create({
-    createdBy: data.createdBy,
+  const row = {
+    id: newId(),
+    created_by: data.createdBy,
     title: data.title,
     content: data.content,
-    scheduledAt: data.scheduledAt,
+    scheduled_at: data.scheduledAt,
     status: "pending",
-    deliveredAt: null,
-    seenBy: [],
-    createdAt: ts,
-    updatedAt: ts,
-  });
-  return toAlertRec(doc.toObject() as AlertDoc);
+    delivered_at: null,
+    seen_by: [] as string[],
+    created_at: ts,
+    updated_at: ts,
+  };
+  const { data: created, error } = await getSupabase().from("alerts").insert(row).select().single();
+  dbError(error);
+  return toAlertRec(created as AlertRow);
 }
 
 export async function listAlerts(): Promise<AlertRec[]> {
-  const docs = await Alert.find().sort({ scheduledAt: -1 }).lean<AlertDoc[]>();
-  return docs.map(toAlertRec);
+  const { data, error } = await getSupabase().from("alerts").select("*").order("scheduled_at", { ascending: false });
+  dbError(error);
+  return (data as AlertRow[]).map(toAlertRec);
 }
 
 export async function listDueAlerts(): Promise<AlertRec[]> {
   const now = new Date().toISOString();
-  const docs = await Alert.find({ status: "pending", scheduledAt: { $lte: now } }).lean<AlertDoc[]>();
-  return docs.map(toAlertRec);
+  const { data, error } = await getSupabase()
+    .from("alerts")
+    .select("*")
+    .eq("status", "pending")
+    .lte("scheduled_at", now);
+  dbError(error);
+  return (data as AlertRow[]).map(toAlertRec);
 }
 
 export async function markAlertDelivered(id: string): Promise<void> {
-  await Alert.findByIdAndUpdate(id, {
-    status: "delivered",
-    deliveredAt: nowISO(),
-    updatedAt: nowISO(),
-  });
+  const ts = nowISO();
+  const { error } = await getSupabase()
+    .from("alerts")
+    .update({ status: "delivered", delivered_at: ts, updated_at: ts })
+    .eq("id", id);
+  dbError(error);
 }
 
 export async function deleteAlert(id: string): Promise<boolean> {
-  const result = await Alert.findByIdAndDelete(id);
-  return !!result;
+  const { data, error } = await getSupabase().from("alerts").delete().eq("id", id).select("id").maybeSingle();
+  dbError(error);
+  return !!data;
 }
 
-/** Mark all due pending alerts as delivered; returns alerts that were just delivered. */
 export async function deliverDueAlerts(): Promise<AlertRec[]> {
   const due = await listDueAlerts();
-  for (const alert of due) {
-    await markAlertDelivered(alert._id);
-  }
-  return due;
+  if (due.length === 0) return due;
+  const ts = nowISO();
+  const ids = due.map((a) => a._id);
+  const { error } = await getSupabase()
+    .from("alerts")
+    .update({ status: "delivered", delivered_at: ts, updated_at: ts })
+    .in("id", ids);
+  dbError(error);
+  return due.map((a) => ({ ...a, status: "delivered" as const, deliveredAt: ts, updatedAt: ts }));
 }
 
 export async function listDeliveredAlertsSince(since: string): Promise<AlertRec[]> {
-  const docs = await Alert.find({
-    status: "delivered",
-    deliveredAt: { $gt: since },
-  })
-    .sort({ deliveredAt: 1 })
-    .lean<AlertDoc[]>();
-  return docs.map(toAlertRec);
+  const { data, error } = await getSupabase()
+    .from("alerts")
+    .select("*")
+    .eq("status", "delivered")
+    .gt("delivered_at", since)
+    .order("delivered_at", { ascending: true });
+  dbError(error);
+  return (data as AlertRow[]).map(toAlertRec);
 }

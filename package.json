@@ -9,12 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
     "@vercel/blob": "^2.4.0",
     "bcryptjs": "^3.0.3",
     "cookie": "^1.1.1",
     "jose": "^6.2.3",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.6.3",
     "next": "^16.2.6",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
