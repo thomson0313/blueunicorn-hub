@@ -6,36 +6,47 @@ import Link from "next/link";
 import Image from "next/image";
 import { RequiredLabel } from "@/components/RequiredLabel";
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   return (
     <Suspense fallback={null}>
-      <LoginForm />
+      <ResetForm />
     </Suspense>
   );
 }
 
-function LoginForm() {
+function ResetForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const [identifier, setIdentifier] = useState("");
+  const token = params.get("token") || "";
+
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (!token) {
+      setError("Invalid reset link");
+      return;
+    }
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password }),
+        body: JSON.stringify({ token, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Login failed");
-      router.push(params.get("next") || "/dashboard");
-      router.refresh();
+      if (!res.ok) throw new Error(data.error || "Reset failed");
+      setMessage(data.message);
+      setTimeout(() => router.push("/login"), 2000);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -46,61 +57,62 @@ function LoginForm() {
   const inputClass =
     "w-full rounded-xl border border-slate-300 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent";
 
+  if (!token) {
+    return (
+      <div className="min-h-screen tg-auth-bg flex items-center justify-center px-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
+          <p className="text-red-600 mb-4">This reset link is invalid or missing.</p>
+          <Link href="/forgot-password" className="text-brand-600 font-medium hover:underline">
+            Request a new link
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen tg-auth-bg flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center mb-6">
           <Image src="/blunicorn-logo.png" alt="Blunicorn" width={72} height={72} priority style={{ height: "auto" }} />
           <h1 className="text-white text-2xl font-bold mt-4">Blunicorn</h1>
-          <p className="text-brand-50/90 text-sm">Company Members Hub</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h2 className="text-xl font-bold text-slate-900">Sign in</h2>
-          <p className="text-slate-500 text-sm mt-1 mb-6">Use your email or username to continue.</p>
-          <form onSubmit={onSubmit} className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-900">Set a new password</h2>
+          <form onSubmit={onSubmit} className="space-y-4 mt-6">
             <div>
-              <RequiredLabel>Email or username</RequiredLabel>
-              <input
-                type="text"
-                required
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                className={inputClass}
-                placeholder="you@company.com or BlueUnicorn"
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <RequiredLabel>Password</RequiredLabel>
-                <Link href="/forgot-password" className="text-sm text-brand-600 hover:underline font-medium">
-                  Forgot password?
-                </Link>
-              </div>
+              <RequiredLabel>New password</RequiredLabel>
               <input
                 type="password"
                 required
+                minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className={inputClass}
-                placeholder="Your password"
+              />
+            </div>
+            <div>
+              <RequiredLabel>Confirm password</RequiredLabel>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className={inputClass}
               />
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
+            {message && <p className="text-sm text-emerald-700">{message}</p>}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-3 transition shadow-sm cursor-pointer"
+              className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-3 transition"
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? "Saving..." : "Update password"}
             </button>
           </form>
-          <p className="text-sm text-slate-500 mt-6 text-center">
-            No account?{" "}
-            <Link href="/signup" className="text-brand-600 font-medium hover:underline">
-              Create one
-            </Link>
-          </p>
         </div>
       </div>
     </div>

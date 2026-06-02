@@ -2,6 +2,19 @@
 
 create extension if not exists "pgcrypto";
 
+create table if not exists member_fields (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+insert into member_fields (name, sort_order) values
+  ('AI club', 1),
+  ('Scandicommerce', 2),
+  ('Online Business', 3)
+on conflict (name) do nothing;
+
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -9,9 +22,10 @@ create table if not exists users (
   username text unique,
   password_hash text not null,
   role text not null check (role in ('admin', 'member')),
+  field_id uuid references member_fields(id),
   avatar_url text,
   skills text not null default '',
-  plan text not null default '',
+  bio text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -67,7 +81,16 @@ create table if not exists presence (
 
 create index if not exists presence_last_seen_idx on presence(last_seen);
 
--- Public bucket for profile avatars.
+create table if not exists password_resets (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  token text not null unique,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists password_resets_token_idx on password_resets(token);
+
 insert into storage.buckets (id, name, public)
 values ('avatars', 'avatars', true)
 on conflict (id) do update set public = true;

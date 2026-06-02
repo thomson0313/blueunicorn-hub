@@ -16,7 +16,7 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
   const user = await findUserById(id);
   if (!user) notFound();
 
-  const profile = publicUser(user);
+  const profile = await publicUser(user);
   const skills = profile.skills
     .split(",")
     .map((s) => s.trim())
@@ -45,6 +45,7 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
             <p className="text-sm text-slate-500">
               {profile.username ? `@${profile.username} · ` : ""}
               {profile.email}
+              {profile.fieldName ? ` · ${profile.fieldName}` : ""}
             </p>
           </div>
         </div>
@@ -66,11 +67,11 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-        <h2 className="font-semibold text-slate-800 mb-2">Plan</h2>
-        {profile.plan ? (
-          <p className="text-sm text-slate-600 whitespace-pre-wrap">{profile.plan}</p>
+        <h2 className="font-semibold text-slate-800 mb-2">Bio</h2>
+        {profile.bio ? (
+          <p className="text-sm text-slate-600 whitespace-pre-wrap">{profile.bio}</p>
         ) : (
-          <p className="text-sm text-slate-400">No plan shared yet.</p>
+          <p className="text-sm text-slate-400">No bio shared yet.</p>
         )}
       </div>
 

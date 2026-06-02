@@ -7,6 +7,11 @@ export type SessionUser = {
   role: Role;
 };
 
+export type MemberField = {
+  _id: string;
+  name: string;
+};
+
 export type PublicUser = {
   _id: string;
   name: string;
@@ -15,7 +20,9 @@ export type PublicUser = {
   username?: string | null;
   avatarUrl?: string | null;
   skills?: string;
-  plan?: string;
+  bio?: string;
+  fieldId?: string | null;
+  fieldName?: string | null;
 };
 
 export type Profile = {
@@ -26,7 +33,9 @@ export type Profile = {
   role: Role;
   avatarUrl: string | null;
   skills: string;
-  plan: string;
+  bio: string;
+  fieldId: string | null;
+  fieldName: string | null;
 };
 
 export type Project = {

@@ -13,9 +13,17 @@ export interface UserRec {
   role: Role;
   avatarUrl?: string | null;
   skills?: string;
-  plan?: string;
+  bio?: string;
+  fieldId?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface MemberFieldRec {
+  _id: string;
+  name: string;
+  sortOrder: number;
+  createdAt: string;
 }
 
 export interface ProjectRec {
@@ -60,11 +68,20 @@ type UserRow = {
   username: string | null;
   password_hash: string;
   role: string;
+  field_id: string | null;
   avatar_url: string | null;
   skills: string;
-  plan: string;
+  bio?: string;
+  plan?: string;
   created_at: string;
   updated_at: string;
+};
+
+type MemberFieldRow = {
+  id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
 };
 
 type ProjectRow = {
@@ -118,6 +135,10 @@ export function nowISO(): string {
   return new Date().toISOString();
 }
 
+function userBio(row: UserRow): string {
+  return row.bio ?? row.plan ?? "";
+}
+
 function toUserRec(row: UserRow): UserRec {
   return {
     _id: row.id,
@@ -126,11 +147,21 @@ function toUserRec(row: UserRow): UserRec {
     username: row.username,
     passwordHash: row.password_hash,
     role: row.role as Role,
+    fieldId: row.field_id ?? null,
     avatarUrl: row.avatar_url,
     skills: row.skills ?? "",
-    plan: row.plan ?? "",
+    bio: userBio(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function toMemberFieldRec(row: MemberFieldRow): MemberFieldRec {
+  return {
+    _id: row.id,
+    name: row.name,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
   };
 }
 
@@ -183,10 +214,22 @@ export type PublicUser = {
   role: Role;
   avatarUrl: string | null;
   skills: string;
-  plan: string;
+  bio: string;
+  fieldId: string | null;
+  fieldName: string | null;
 };
 
-export function publicUser(u: UserRec): PublicUser {
+const fieldNameCache = new Map<string, string>();
+
+export async function getFieldName(fieldId: string | null | undefined): Promise<string | null> {
+  if (!fieldId) return null;
+  if (fieldNameCache.has(fieldId)) return fieldNameCache.get(fieldId)!;
+  const field = await findMemberFieldById(fieldId);
+  if (field) fieldNameCache.set(fieldId, field.name);
+  return field?.name ?? null;
+}
+
+export async function publicUser(u: UserRec): Promise<PublicUser> {
   return {
     _id: u._id,
     name: u.name,
@@ -195,7 +238,9 @@ export function publicUser(u: UserRec): PublicUser {
     role: u.role,
     avatarUrl: u.avatarUrl ?? null,
     skills: u.skills ?? "",
-    plan: u.plan ?? "",
+    bio: u.bio ?? "",
+    fieldId: u.fieldId ?? null,
+    fieldName: await getFieldName(u.fieldId),
   };
 }
 
@@ -270,6 +315,7 @@ export async function createUser(data: {
   username?: string | null;
   passwordHash: string;
   role: Role;
+  fieldId?: string | null;
 }): Promise<UserRec> {
   const ts = nowISO();
   const row = {
@@ -279,8 +325,9 @@ export async function createUser(data: {
     username: data.username || null,
     password_hash: data.passwordHash,
     role: data.role,
+    field_id: data.fieldId ?? null,
     skills: "",
-    plan: "",
+    bio: "",
     created_at: ts,
     updated_at: ts,
   };
@@ -291,7 +338,7 @@ export async function createUser(data: {
 
 export async function updateUser(
   id: string,
-  patch: Partial<Pick<UserRec, "name" | "role" | "passwordHash" | "avatarUrl" | "skills" | "plan">>
+  patch: Partial<Pick<UserRec, "name" | "role" | "passwordHash" | "avatarUrl" | "skills" | "bio">>
 ): Promise<UserRec | null> {
   const payload: Record<string, unknown> = { updated_at: nowISO() };
   if (patch.name !== undefined) payload.name = patch.name;
@@ -299,7 +346,7 @@ export async function updateUser(
   if (patch.passwordHash !== undefined) payload.password_hash = patch.passwordHash;
   if (patch.avatarUrl !== undefined) payload.avatar_url = patch.avatarUrl;
   if (patch.skills !== undefined) payload.skills = patch.skills;
-  if (patch.plan !== undefined) payload.plan = patch.plan;
+  if (patch.bio !== undefined) payload.bio = patch.bio;
 
   const { data, error } = await getSupabase().from("users").update(payload).eq("id", id).select().maybeSingle();
   dbError(error);
@@ -319,7 +366,7 @@ type ProjectWithOwner = Omit<ProjectRec, "owner"> & { owner: PublicUser | string
 async function attachOwner(p: ProjectRec, users?: UserRec[]): Promise<ProjectWithOwner> {
   const owner =
     users?.find((u) => u._id === p.owner) ?? (await findUserById(p.owner));
-  return { ...p, owner: owner ? publicUser(owner) : p.owner };
+  return { ...p, owner: owner ? await publicUser(owner) : p.owner };
 }
 
 export async function listProjectsByOwner(owner: string, populate = false): Promise<ProjectWithOwner[]> {
@@ -650,4 +697,102 @@ export async function listDeliveredAlertsSince(since: string): Promise<AlertRec[
     .order("delivered_at", { ascending: true });
   dbError(error);
   return (data as AlertRow[]).map(toAlertRec);
+}
+
+/* ------------------------- Member fields ------------------------- */
+
+export async function listMemberFields(): Promise<MemberFieldRec[]> {
+  const { data, error } = await getSupabase()
+    .from("member_fields")
+    .select("*")
+    .order("sort_order", { ascending: true });
+  dbError(error);
+  return (data as MemberFieldRow[]).map(toMemberFieldRec);
+}
+
+export async function findMemberFieldById(id: string): Promise<MemberFieldRec | null> {
+  const { data, error } = await getSupabase().from("member_fields").select("*").eq("id", id).maybeSingle();
+  dbError(error);
+  return data ? toMemberFieldRec(data as MemberFieldRow) : null;
+}
+
+export async function createMemberField(name: string): Promise<MemberFieldRec> {
+  const trimmed = name.trim();
+  const { data: existing } = await getSupabase()
+    .from("member_fields")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const sortOrder = ((existing as { sort_order?: number } | null)?.sort_order ?? 0) + 1;
+  const { data, error } = await getSupabase()
+    .from("member_fields")
+    .insert({ id: newId(), name: trimmed, sort_order: sortOrder })
+    .select()
+    .single();
+  dbError(error);
+  return toMemberFieldRec(data as MemberFieldRow);
+}
+
+export async function deleteMemberField(id: string): Promise<{ ok: boolean; error?: string }> {
+  const { count, error: countErr } = await getSupabase()
+    .from("users")
+    .select("*", { count: "exact", head: true })
+    .eq("field_id", id);
+  dbError(countErr);
+  if ((count ?? 0) > 0) {
+    return { ok: false, error: "Cannot delete: members are assigned to this field" };
+  }
+  const { data, error } = await getSupabase().from("member_fields").delete().eq("id", id).select("id").maybeSingle();
+  dbError(error);
+  return { ok: !!data };
+}
+
+export async function ensureDefaultMemberFields(): Promise<void> {
+  const fields = await listMemberFields();
+  if (fields.length > 0) return;
+  for (const [i, name] of ["AI club", "Scandicommerce", "Online Business"].entries()) {
+    await getSupabase().from("member_fields").insert({ id: newId(), name, sort_order: i + 1 });
+  }
+}
+
+export async function countUsersByFieldId(fieldId: string): Promise<number> {
+  const { count, error } = await getSupabase()
+    .from("users")
+    .select("*", { count: "exact", head: true })
+    .eq("field_id", fieldId);
+  dbError(error);
+  return count ?? 0;
+}
+
+/* ----------------------- Password reset ----------------------- */
+
+export async function createPasswordReset(userId: string, token: string, expiresAt: string): Promise<void> {
+  await getSupabase().from("password_resets").delete().eq("user_id", userId);
+  const { error } = await getSupabase().from("password_resets").insert({
+    id: newId(),
+    user_id: userId,
+    token,
+    expires_at: expiresAt,
+  });
+  dbError(error);
+}
+
+export async function findPasswordResetByToken(
+  token: string
+): Promise<{ userId: string; expiresAt: string } | null> {
+  const { data, error } = await getSupabase()
+    .from("password_resets")
+    .select("user_id, expires_at")
+    .eq("token", token)
+    .maybeSingle();
+  dbError(error);
+  if (!data) return null;
+  const row = data as { user_id: string; expires_at: string };
+  return { userId: row.user_id, expiresAt: row.expires_at };
+}
+
+export async function deletePasswordResetByToken(token: string): Promise<void> {
+  const { error } = await getSupabase().from("password_resets").delete().eq("token", token);
+  dbError(error);
 }

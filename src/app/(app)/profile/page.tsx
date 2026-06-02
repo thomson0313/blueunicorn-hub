@@ -12,7 +12,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState("");
   const [skills, setSkills] = useState("");
-  const [plan, setPlan] = useState("");
+  const [bio, setBio] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -25,7 +25,7 @@ export default function ProfilePage() {
           setProfile(d.profile);
           setName(d.profile.name);
           setSkills(d.profile.skills || "");
-          setPlan(d.profile.plan || "");
+          setBio(d.profile.bio || "");
         }
       });
   }, []);
@@ -37,7 +37,7 @@ export default function ProfilePage() {
     const res = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, skills, plan }),
+      body: JSON.stringify({ name, skills, bio }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -94,6 +94,7 @@ export default function ProfilePage() {
             <p className="text-sm text-slate-500">
               {profile.username ? `@${profile.username} · ` : ""}
               {profile.email}
+              {profile.fieldName ? ` · ${profile.fieldName}` : ""}
             </p>
             <button
               onClick={() => fileRef.current?.click()}
@@ -128,12 +129,12 @@ export default function ProfilePage() {
           <p className="text-xs text-slate-400 mt-1">Separate skills with commas.</p>
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Plan</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Bio</label>
           <textarea
-            value={plan}
-            onChange={(e) => setPlan(e.target.value)}
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
             rows={4}
-            placeholder="What are you focused on? Your goals and current plan."
+            placeholder="A short bio about you, your role, and what you're working on."
             className={inputClass}
           />
         </div>

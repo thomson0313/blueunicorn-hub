@@ -16,6 +16,7 @@ export function NavBar() {
     { href: "/projects", label: "My Projects", memberOnly: true },
     { href: "/chat", label: "Chat" },
     { href: "/admin/members", label: "Members", adminOnly: true },
+    { href: "/admin/fields", label: "Fields", adminOnly: true },
     { href: "/admin/alerts", label: "Alerts", adminOnly: true },
     { href: "/profile", label: "Profile" },
   ].filter((l) => {

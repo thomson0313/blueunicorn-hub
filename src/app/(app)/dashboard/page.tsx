@@ -63,9 +63,10 @@ export default async function DashboardPage() {
   }
 
   // Admin view: all members' progress grouped by member.
-  const members = (await listUsers())
-    .map(publicUser)
-    .sort((a, b) => a.name.localeCompare(b.name)) as unknown as PublicUser[];
+  const memberRows = await listUsers();
+  const members = (await Promise.all(memberRows.map((u) => publicUser(u)))).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  ) as unknown as PublicUser[];
   const projects = (await listAllProjects()) as unknown as ProjectType[];
 
   const byOwner = new Map<string, ProjectType[]>();

@@ -6,7 +6,7 @@ const secretKey = new TextEncoder().encode(JWT_SECRET);
 const COOKIE_NAME = "session";
 
 const PROTECTED = ["/dashboard", "/projects", "/chat", "/admin"];
-const AUTH_PAGES = ["/login", "/signup"];
+const AUTH_PAGES = ["/login", "/signup", "/forgot-password", "/reset-password"];
 
 type Session = { sub: string; role: "admin" | "member" };
 
@@ -51,5 +51,15 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/dashboard/:path*", "/projects/:path*", "/chat/:path*", "/admin/:path*", "/login", "/signup"],
+  matcher: [
+    "/",
+    "/dashboard/:path*",
+    "/projects/:path*",
+    "/chat/:path*",
+    "/admin/:path*",
+    "/login",
+    "/signup",
+    "/forgot-password",
+    "/reset-password",
+  ],
 };

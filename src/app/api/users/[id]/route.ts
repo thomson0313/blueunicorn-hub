@@ -11,7 +11,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     await connectDB();
     const user = await findUserById(id);
     if (!user) throw new HttpError(404, "User not found");
-    return NextResponse.json({ profile: publicUser(user) });
+    return NextResponse.json({ profile: await publicUser(user) });
   } catch (err) {
     return handleError(err);
   }
