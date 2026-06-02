@@ -3,7 +3,7 @@ import { connectDB } from "@/lib/db";
 import { deliverDueAlerts, listDeliveredAlertsSince } from "@/lib/repo";
 import { requireUser, handleError } from "@/lib/api-guard";
 
-// GET /api/alerts/feed?since=<iso> — poll for delivered alerts (replaces socket push on Vercel).
+// GET /api/alerts/feed?since=<iso> — marks due alerts as delivered and returns new ones for the client.
 export async function GET(req: Request) {
   try {
     await requireUser();

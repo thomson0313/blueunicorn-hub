@@ -5,10 +5,9 @@ import { parse } from "node:url";
 import next from "next";
 import { Server as SocketIOServer, type Socket } from "socket.io";
 import { parse as parseCookie } from "cookie";
-import cron from "node-cron";
 import { connectDB } from "./src/lib/db";
 import { verifySession, COOKIE_NAME, type SessionPayload } from "./src/lib/auth";
-import { dmKeyFor, createMessage, listDueAlerts, markAlertDelivered } from "./src/lib/repo";
+import { dmKeyFor, createMessage } from "./src/lib/repo";
 
 // Load .env.local / .env so this standalone process has the same env as Next.
 loadEnvConfig(process.cwd());
@@ -113,24 +112,6 @@ app.prepare().then(async () => {
 
   // Make io reachable from Next route handlers (same process) for instant pushes.
   (globalThis as unknown as { _io?: SocketIOServer })._io = io;
-
-  // Alert scheduler: every minute, deliver any pending alerts whose time has come.
-  cron.schedule("* * * * *", async () => {
-    try {
-      const due = await listDueAlerts();
-      for (const alert of due) {
-        io.emit("alert:new", {
-          _id: alert._id,
-          title: alert.title,
-          content: alert.content,
-          scheduledAt: alert.scheduledAt,
-        });
-        await markAlertDelivered(alert._id);
-      }
-    } catch (err) {
-      console.error("[scheduler] alert delivery error:", (err as Error).message);
-    }
-  });
 
   httpServer.listen(port, '0.0.0.0', () => {
     console.log(`> Ready on http://${hostname}:${port}`);

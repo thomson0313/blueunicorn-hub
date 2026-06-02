@@ -33,6 +33,8 @@ export function useApp(): AppContextValue {
 const REALTIME_MODE: RealtimeMode =
   process.env.NEXT_PUBLIC_REALTIME_MODE === "polling" ? "polling" : "socket";
 
+const ALERT_POLL_MS = 15_000;
+
 export function AppProvider({ user, children }: { user: SessionUser; children: React.ReactNode }) {
   const socketRef = useRef<Socket | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -65,6 +67,34 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
     });
   }, []);
 
+  // Deliver due scheduled alerts and show new ones (no cron — runs while the app is open).
+  useEffect(() => {
+    let cancelled = false;
+
+    const pollAlerts = async () => {
+      try {
+        const since = alertsSinceRef.current;
+        const res = await fetch(`/api/alerts/feed?since=${encodeURIComponent(since)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const incoming = (data.alerts || []) as AlertItem[];
+        if (incoming.length > 0) {
+          alertsSinceRef.current = new Date().toISOString();
+          for (const alert of incoming) pushAlert(alert);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    pollAlerts();
+    const timer = setInterval(pollAlerts, ALERT_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pushAlert]);
+
   // Socket.IO — local custom server only.
   useEffect(() => {
     if (REALTIME_MODE !== "socket") return;
@@ -74,11 +104,11 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
     setSocket(s);
 
     s.on("connect_error", () => {
-      // Avoid repeated 404 noise if socket endpoint is missing.
       s.disconnect();
     });
 
     s.on("presence:update", (ids: string[]) => setOnlineUserIds(ids));
+    // Instant toast when admin schedules an alert for "now" (feed poll handles future times).
     s.on("alert:new", pushAlert);
     s.on("general:message", (m: ChatMessage) => bumpUnread("general", m.sender._id === user.sub));
     s.on("dm:message", (m: ChatMessage) => {
@@ -94,7 +124,7 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
     };
   }, [user.sub, bumpUnread, pushAlert]);
 
-  // HTTP polling — Vercel serverless.
+  // HTTP polling — Vercel serverless (chat + presence).
   useEffect(() => {
     if (REALTIME_MODE !== "polling") return;
 
@@ -106,22 +136,6 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
         if (!res.ok || cancelled) return;
         const data = await res.json();
         setOnlineUserIds(data.onlineUserIds || []);
-      } catch {
-        /* ignore */
-      }
-    };
-
-    const pollAlerts = async () => {
-      try {
-        const since = alertsSinceRef.current;
-        const res = await fetch(`/api/alerts/feed?since=${encodeURIComponent(since)}`);
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        const incoming = (data.alerts || []) as AlertItem[];
-        if (incoming.length > 0) {
-          alertsSinceRef.current = new Date().toISOString();
-          for (const alert of incoming) pushAlert(alert);
-        }
       } catch {
         /* ignore */
       }
@@ -153,19 +167,16 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
     };
 
     pollPresence();
-    pollAlerts();
     pollInbox();
     const presenceTimer = setInterval(pollPresence, 30_000);
-    const alertTimer = setInterval(pollAlerts, 15_000);
     const inboxTimer = setInterval(pollInbox, 5_000);
 
     return () => {
       cancelled = true;
       clearInterval(presenceTimer);
-      clearInterval(alertTimer);
       clearInterval(inboxTimer);
     };
-  }, [pushAlert, bumpUnread, user.sub]);
+  }, [bumpUnread, user.sub]);
 
   const setActiveConversation = useCallback((id: string | null) => {
     activeConvRef.current = id;
@@ -211,7 +222,6 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
-// Expose for chat page polling notifications.
 export function useRealtimeMode(): RealtimeMode {
   return REALTIME_MODE;
 }
