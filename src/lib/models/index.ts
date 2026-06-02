@@ -70,3 +70,13 @@ export const Message =
   mongoose.models.Message ?? mongoose.model("Message", messageSchema);
 export const Alert =
   mongoose.models.Alert ?? mongoose.model("Alert", alertSchema);
+
+const presenceSchema = new Schema({
+  _id: { type: String, required: true },
+  lastSeen: { type: String, required: true },
+});
+
+export type PresenceDoc = InferSchemaType<typeof presenceSchema>;
+
+export const Presence =
+  mongoose.models.Presence ?? mongoose.model("Presence", presenceSchema);

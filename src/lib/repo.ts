@@ -4,6 +4,7 @@ import {
   Project,
   Message,
   Alert,
+  Presence,
   type UserDoc,
   type ProjectDoc,
   type MessageDoc,
@@ -353,6 +354,29 @@ export async function createMessage(data: {
   return toMessageRec(doc.toObject() as MessageDoc);
 }
 
+export async function createGeneralMessage(
+  senderId: string,
+  content: string
+): Promise<MessageWithSender> {
+  const doc = await createMessage({ sender: senderId, channelType: "general", content });
+  return attachSender(doc);
+}
+
+export async function createDmMessage(
+  senderId: string,
+  to: string,
+  content: string
+): Promise<MessageWithSender> {
+  const doc = await createMessage({
+    sender: senderId,
+    channelType: "dm",
+    recipient: to,
+    dmKey: dmKeyFor(senderId, to),
+    content,
+  });
+  return attachSender(doc);
+}
+
 export async function listGeneralMessages(limit = 200): Promise<MessageWithSender[]> {
   const docs = await Message.find({ channelType: "general" })
     .sort({ createdAt: 1 })
@@ -371,6 +395,68 @@ export async function listDmMessages(dmKey: string, limit = 200): Promise<Messag
   const messages = docs.map(toMessageRec);
   const users = await listUsers();
   return Promise.all(messages.map((m) => attachSender(m, users)));
+}
+
+export async function listGeneralMessagesSince(
+  since: string,
+  limit = 100
+): Promise<MessageWithSender[]> {
+  const docs = await Message.find({ channelType: "general", createdAt: { $gt: since } })
+    .sort({ createdAt: 1 })
+    .limit(limit)
+    .lean<MessageDoc[]>();
+  const messages = docs.map(toMessageRec);
+  const users = await listUsers();
+  return Promise.all(messages.map((m) => attachSender(m, users)));
+}
+
+/** Recent messages relevant to a user (for polling notifications). */
+export async function listInboxMessagesSince(
+  userId: string,
+  since: string,
+  limit = 50
+): Promise<MessageWithSender[]> {
+  const docs = await Message.find({
+    createdAt: { $gt: since },
+    $or: [
+      { channelType: "general" },
+      { channelType: "dm", $or: [{ sender: userId }, { recipient: userId }] },
+    ],
+  })
+    .sort({ createdAt: 1 })
+    .limit(limit)
+    .lean<MessageDoc[]>();
+  const messages = docs.map(toMessageRec);
+  const users = await listUsers();
+  return Promise.all(messages.map((m) => attachSender(m, users)));
+}
+
+export async function listDmMessagesSince(
+  dmKey: string,
+  since: string,
+  limit = 100
+): Promise<MessageWithSender[]> {
+  const docs = await Message.find({ channelType: "dm", dmKey, createdAt: { $gt: since } })
+    .sort({ createdAt: 1 })
+    .limit(limit)
+    .lean<MessageDoc[]>();
+  const messages = docs.map(toMessageRec);
+  const users = await listUsers();
+  return Promise.all(messages.map((m) => attachSender(m, users)));
+}
+
+export async function touchPresence(userId: string): Promise<void> {
+  await Presence.findByIdAndUpdate(
+    userId,
+    { lastSeen: nowISO() },
+    { upsert: true, setDefaultsOnInsert: true }
+  );
+}
+
+export async function listOnlineUserIds(maxAgeMs = 90_000): Promise<string[]> {
+  const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
+  const docs = await Presence.find({ lastSeen: { $gte: cutoff } }).lean<{ _id: string }[]>();
+  return docs.map((d) => String(d._id));
 }
 
 /* ----------------------------- Alerts ----------------------------- */
@@ -418,4 +504,23 @@ export async function markAlertDelivered(id: string): Promise<void> {
 export async function deleteAlert(id: string): Promise<boolean> {
   const result = await Alert.findByIdAndDelete(id);
   return !!result;
+}
+
+/** Mark all due pending alerts as delivered; returns alerts that were just delivered. */
+export async function deliverDueAlerts(): Promise<AlertRec[]> {
+  const due = await listDueAlerts();
+  for (const alert of due) {
+    await markAlertDelivered(alert._id);
+  }
+  return due;
+}
+
+export async function listDeliveredAlertsSince(since: string): Promise<AlertRec[]> {
+  const docs = await Alert.find({
+    status: "delivered",
+    deliveredAt: { $gt: since },
+  })
+    .sort({ deliveredAt: 1 })
+    .lean<AlertDoc[]>();
+  return docs.map(toAlertRec);
 }

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { connectDB } from "@/lib/db";
 import { updateUser, publicUser } from "@/lib/repo";
+import { storeAvatarFile } from "@/lib/avatar-storage";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
 
 const MAX_BYTES = 4 * 1024 * 1024; // 4 MB
@@ -27,14 +26,7 @@ export async function POST(req: Request) {
 
     await connectDB();
 
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
-    await fs.mkdir(uploadsDir, { recursive: true });
-
-    const filename = `${me.sub}-${Date.now()}.${ext}`;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(path.join(uploadsDir, filename), buffer);
-
-    const avatarUrl = `/uploads/${filename}`;
+    const avatarUrl = await storeAvatarFile(me.sub, file, ext);
     const user = await updateUser(me.sub, { avatarUrl });
     if (!user) throw new HttpError(404, "User not found");
 

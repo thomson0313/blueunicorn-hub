@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
+import { useApp } from "@/components/AppProvider";
 import type { Profile } from "@/lib/types";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { setAvatarUrl } = useApp();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState("");
   const [skills, setSkills] = useState("");
@@ -64,6 +66,7 @@ export default function ProfilePage() {
       return;
     }
     setProfile(data.profile);
+    setAvatarUrl(data.profile.avatarUrl ?? null);
     setStatus("Photo updated");
     router.refresh();
     setTimeout(() => setStatus(""), 2000);

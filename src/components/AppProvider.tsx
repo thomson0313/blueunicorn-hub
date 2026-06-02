@@ -5,14 +5,17 @@ import { io, type Socket } from "socket.io-client";
 import type { SessionUser, AlertItem, ChatMessage } from "@/lib/types";
 import { playAlertChime, playMessageChime, unlockAudio } from "@/lib/sound";
 
+type RealtimeMode = "socket" | "polling";
+
 type AppContextValue = {
   user: SessionUser;
+  realtimeMode: RealtimeMode;
   socket: Socket | null;
   onlineUserIds: string[];
   alerts: AlertItem[];
   dismissAlert: (id: string) => void;
   avatarUrl: string | null;
-  // Chat message notifications
+  setAvatarUrl: (url: string | null) => void;
   unread: Record<string, number>;
   totalUnread: number;
   setActiveConversation: (id: string | null) => void;
@@ -27,6 +30,9 @@ export function useApp(): AppContextValue {
   return ctx;
 }
 
+const REALTIME_MODE: RealtimeMode =
+  process.env.NEXT_PUBLIC_REALTIME_MODE === "polling" ? "polling" : "socket";
+
 export function AppProvider({ user, children }: { user: SessionUser; children: React.ReactNode }) {
   const socketRef = useRef<Socket | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -34,8 +40,8 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [unread, setUnread] = useState<Record<string, number>>({});
-  // Which conversation the user is actively viewing ("general" or a userId), if any.
   const activeConvRef = useRef<string | null>(null);
+  const alertsSinceRef = useRef(new Date().toISOString());
 
   useEffect(() => {
     fetch("/api/profile")
@@ -44,40 +50,122 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
       .catch(() => {});
   }, []);
 
+  const bumpUnread = useCallback((convId: string, fromSelf: boolean) => {
+    if (fromSelf) return;
+    if (activeConvRef.current === convId) return;
+    setUnread((prev) => ({ ...prev, [convId]: (prev[convId] || 0) + 1 }));
+    playMessageChime();
+  }, []);
+
+  const pushAlert = useCallback((alert: AlertItem) => {
+    setAlerts((prev) => {
+      if (prev.some((a) => a._id === alert._id)) return prev;
+      playAlertChime();
+      return [...prev, alert];
+    });
+  }, []);
+
+  // Socket.IO — local custom server only.
   useEffect(() => {
+    if (REALTIME_MODE !== "socket") return;
+
     const s = io({ path: "/socket.io", withCredentials: true });
     socketRef.current = s;
     setSocket(s);
 
-    s.on("presence:update", (ids: string[]) => setOnlineUserIds(ids));
-    s.on("alert:new", (alert: AlertItem) => {
-      setAlerts((prev) => {
-        if (prev.some((a) => a._id === alert._id)) return prev;
-        playAlertChime();
-        return [...prev, alert];
-      });
+    s.on("connect_error", () => {
+      // Avoid repeated 404 noise if socket endpoint is missing.
+      s.disconnect();
     });
 
-    // Global chat notifications: bump unread + play a sound for messages that
-    // are not from me and not in the conversation I'm currently viewing.
-    const notify = (convId: string, fromSelf: boolean) => {
-      if (fromSelf) return;
-      if (activeConvRef.current === convId) return;
-      setUnread((prev) => ({ ...prev, [convId]: (prev[convId] || 0) + 1 }));
-      playMessageChime();
-    };
-    s.on("general:message", (m: ChatMessage) => notify("general", m.sender._id === user.sub));
+    s.on("presence:update", (ids: string[]) => setOnlineUserIds(ids));
+    s.on("alert:new", pushAlert);
+    s.on("general:message", (m: ChatMessage) => bumpUnread("general", m.sender._id === user.sub));
     s.on("dm:message", (m: ChatMessage) => {
       const fromSelf = m.sender._id === user.sub;
       const other = fromSelf ? m.recipient || "" : m.sender._id;
-      notify(other, fromSelf);
+      bumpUnread(other, fromSelf);
     });
 
     return () => {
       s.disconnect();
       socketRef.current = null;
+      setSocket(null);
     };
-  }, [user.sub]);
+  }, [user.sub, bumpUnread, pushAlert]);
+
+  // HTTP polling — Vercel serverless.
+  useEffect(() => {
+    if (REALTIME_MODE !== "polling") return;
+
+    let cancelled = false;
+
+    const pollPresence = async () => {
+      try {
+        const res = await fetch("/api/presence", { method: "POST" });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        setOnlineUserIds(data.onlineUserIds || []);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const pollAlerts = async () => {
+      try {
+        const since = alertsSinceRef.current;
+        const res = await fetch(`/api/alerts/feed?since=${encodeURIComponent(since)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const incoming = (data.alerts || []) as AlertItem[];
+        if (incoming.length > 0) {
+          alertsSinceRef.current = new Date().toISOString();
+          for (const alert of incoming) pushAlert(alert);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const inboxSinceRef = { current: new Date().toISOString() };
+    const pollInbox = async () => {
+      try {
+        const since = inboxSinceRef.current;
+        const res = await fetch(`/api/messages/inbox?since=${encodeURIComponent(since)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const incoming = (data.messages || []) as ChatMessage[];
+        if (incoming.length > 0) {
+          inboxSinceRef.current = new Date().toISOString();
+          for (const m of incoming) {
+            if (m.sender._id === user.sub) continue;
+            const convId = !m.recipient
+              ? "general"
+              : m.sender._id === user.sub
+                ? m.recipient
+                : m.sender._id;
+            bumpUnread(convId, false);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    pollPresence();
+    pollAlerts();
+    pollInbox();
+    const presenceTimer = setInterval(pollPresence, 30_000);
+    const alertTimer = setInterval(pollAlerts, 15_000);
+    const inboxTimer = setInterval(pollInbox, 5_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(presenceTimer);
+      clearInterval(alertTimer);
+      clearInterval(inboxTimer);
+    };
+  }, [pushAlert, bumpUnread, user.sub]);
 
   const setActiveConversation = useCallback((id: string | null) => {
     activeConvRef.current = id;
@@ -88,7 +176,6 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
     setUnread((prev) => (prev[id] ? { ...prev, [id]: 0 } : prev));
   }, []);
 
-  // Unlock the Web Audio context on the first user interaction so alert sounds can play.
   useEffect(() => {
     const unlock = () => unlockAudio();
     window.addEventListener("pointerdown", unlock, { once: true });
@@ -106,11 +193,13 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
   const value = useMemo(
     () => ({
       user,
+      realtimeMode: REALTIME_MODE,
       socket,
       onlineUserIds,
       alerts,
       dismissAlert,
       avatarUrl,
+      setAvatarUrl,
       unread,
       totalUnread,
       setActiveConversation,
@@ -120,4 +209,9 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+}
+
+// Expose for chat page polling notifications.
+export function useRealtimeMode(): RealtimeMode {
+  return REALTIME_MODE;
 }

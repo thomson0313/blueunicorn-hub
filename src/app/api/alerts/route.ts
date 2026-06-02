@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Server as SocketIOServer } from "socket.io";
 import { connectDB } from "@/lib/db";
-import { createAlert, listAlerts, markAlertDelivered } from "@/lib/repo";
+import { createAlert, listAlerts, markAlertDelivered, deliverDueAlerts } from "@/lib/repo";
 import { requireAdmin, handleError } from "@/lib/api-guard";
 
 const createSchema = z.object({
@@ -16,6 +16,7 @@ export async function GET() {
   try {
     await requireAdmin();
     await connectDB();
+    await deliverDueAlerts();
     return NextResponse.json({ alerts: await listAlerts() });
   } catch (err) {
     return handleError(err);
@@ -41,18 +42,16 @@ export async function POST(req: Request) {
       createdBy: admin.sub,
     });
 
-    // If the scheduled time is already due, push it right away.
+    // If the scheduled time is already due, mark delivered (socket push when custom server runs).
     if (scheduledAt.getTime() <= Date.now()) {
+      await markAlertDelivered(alert._id);
       const io = (globalThis as unknown as { _io?: SocketIOServer })._io;
-      if (io) {
-        io.emit("alert:new", {
-          _id: alert._id,
-          title: alert.title,
-          content: alert.content,
-          scheduledAt: alert.scheduledAt,
-        });
-        await markAlertDelivered(alert._id);
-      }
+      io?.emit("alert:new", {
+        _id: alert._id,
+        title: alert.title,
+        content: alert.content,
+        scheduledAt: alert.scheduledAt,
+      });
     }
 
     return NextResponse.json({ alert }, { status: 201 });

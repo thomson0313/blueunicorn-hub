@@ -2,26 +2,27 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { useApp } from "@/components/AppProvider";
+import { useApp, useRealtimeMode } from "@/components/AppProvider";
 import { Avatar } from "@/components/Avatar";
 import type { PublicUser, ChatMessage } from "@/lib/types";
 
 export default function ChatPage() {
   const { user, socket, onlineUserIds, unread, setActiveConversation, clearUnread } = useApp();
+  const realtimeMode = useRealtimeMode();
   const [users, setUsers] = useState<PublicUser[]>([]);
-  const [target, setTarget] = useState<string>("general"); // "general" or a userId
+  const [target, setTarget] = useState<string>("general");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const lastMessageAtRef = useRef<string | null>(null);
 
-  // Load the member directory once.
   useEffect(() => {
     fetch("/api/users")
       .then((r) => r.json())
       .then((d) => setUsers(d.users || []));
   }, []);
 
-  // Load history whenever the active conversation changes.
   const loadHistory = useCallback(async () => {
     const url =
       target === "general"
@@ -29,32 +30,36 @@ export default function ChatPage() {
         : `/api/messages?channel=dm&with=${target}`;
     const res = await fetch(url);
     const data = await res.json();
-    setMessages(data.messages || []);
+    const list = (data.messages || []) as ChatMessage[];
+    setMessages(list);
+    lastMessageAtRef.current = list.length > 0 ? list[list.length - 1].createdAt : null;
   }, [target]);
 
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
 
-  // Tell the provider which conversation is open so it won't notify for it,
-  // and clear its unread counter while viewing.
   useEffect(() => {
     setActiveConversation(target);
     clearUnread(target);
     return () => setActiveConversation(null);
   }, [target, setActiveConversation, clearUnread]);
 
-  // Live updates from the socket.
+  // Socket live updates (local dev).
   useEffect(() => {
-    if (!socket) return;
+    if (realtimeMode !== "socket" || !socket) return;
 
     const onGeneral = (msg: ChatMessage) => {
-      if (target === "general") setMessages((prev) => [...prev, msg]);
+      if (target === "general") {
+        setMessages((prev) => [...prev, msg]);
+        lastMessageAtRef.current = msg.createdAt;
+      }
     };
     const onDm = (msg: ChatMessage) => {
       const other = msg.sender._id === user.sub ? msg.recipient : msg.sender._id;
       if (target !== "general" && other === target) {
         setMessages((prev) => [...prev, msg]);
+        lastMessageAtRef.current = msg.createdAt;
       }
     };
 
@@ -64,26 +69,86 @@ export default function ChatPage() {
       socket.off("general:message", onGeneral);
       socket.off("dm:message", onDm);
     };
-  }, [socket, target, user.sub]);
+  }, [socket, target, user.sub, realtimeMode]);
+
+  // HTTP polling for new messages (Vercel).
+  useEffect(() => {
+    if (realtimeMode !== "polling") return;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      const since = lastMessageAtRef.current;
+      if (!since) return;
+      const url =
+        target === "general"
+          ? `/api/messages?channel=general&since=${encodeURIComponent(since)}`
+          : `/api/messages?channel=dm&with=${target}&since=${encodeURIComponent(since)}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const incoming = (data.messages || []) as ChatMessage[];
+        if (incoming.length > 0) {
+          setMessages((prev) => [...prev, ...incoming]);
+          lastMessageAtRef.current = incoming[incoming.length - 1].createdAt;
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const timer = setInterval(poll, 3_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [target, realtimeMode]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  function send(e: React.FormEvent) {
+  async function send(e: React.FormEvent) {
     e.preventDefault();
     const content = draft.trim();
-    if (!content || !socket) return;
-    if (target === "general") {
-      socket.emit("general:send", { content });
-    } else {
-      socket.emit("dm:send", { to: target, content });
+    if (!content || sending) return;
+    setSending(true);
+
+    try {
+      if (realtimeMode === "socket" && socket) {
+        if (target === "general") socket.emit("general:send", { content });
+        else socket.emit("dm:send", { to: target, content });
+        setDraft("");
+        return;
+      }
+
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel: target === "general" ? "general" : "dm",
+          to: target === "general" ? undefined : target,
+          content,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Send failed");
+      const msg = data.message as ChatMessage;
+      setMessages((prev) => [...prev, msg]);
+      lastMessageAtRef.current = msg.createdAt;
+      setDraft("");
+    } catch {
+      /* keep draft on failure */
+    } finally {
+      setSending(false);
     }
-    setDraft("");
   }
 
   const targetName =
     target === "general" ? "General Channel" : users.find((u) => u._id === target)?.name || "Direct Message";
+
+  const canSend = realtimeMode === "polling" || !!socket;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 h-[calc(100vh-9rem)]">
@@ -178,9 +243,13 @@ export default function ChatPage() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={`Message ${targetName}`}
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            disabled={!canSend}
+            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
           />
-          <button className="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-5 transition">
+          <button
+            disabled={!canSend || sending}
+            className="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-5 transition disabled:opacity-50"
+          >
             Send
           </button>
         </form>
