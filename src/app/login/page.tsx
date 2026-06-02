@@ -49,7 +49,7 @@ function LoginForm() {
     <div className="min-h-screen tg-auth-bg flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center mb-6">
-          <div className="bg-white rounded-3xl p-4 shadow-lg">
+          <div className="">
             <Image src="/blunicorn-logo.png" alt="Blunicorn" width={72} height={72} priority style={{ height: "auto" }} />
           </div>
           <h1 className="text-white text-2xl font-bold mt-4">Blunicorn</h1>

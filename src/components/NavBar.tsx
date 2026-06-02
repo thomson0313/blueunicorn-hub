@@ -40,8 +40,8 @@ export function NavBar() {
       <div className="max-w-6xl mx-auto px-4 flex items-center justify-between h-14">
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
-            <span className="bg-white rounded-lg p-1">
-              <Image src="/blunicorn-logo.png" alt="Blunicorn" width={26} height={26} style={{ height: "auto" }} priority />
+            <span className="">
+              <Image src="/blunicorn-logo.png" alt="Blunicorn" width={30} height={30} style={{ height: "auto" }} priority />
             </span>
             <span className="font-bold text-white text-lg tracking-tight">Blunicorn</span>
           </Link>
