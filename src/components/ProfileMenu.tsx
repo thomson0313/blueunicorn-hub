@@ -39,7 +39,7 @@ function ProfilePopup({
   onLogout: () => void;
 }) {
   return (
-    <div className="absolute z-[60] left-full ml-2 bottom-0 w-64 rounded-xl border shadow-xl py-2 text-sm bg-white border-slate-200">
+    <div className="absolute z-[60] left-full ml-2 bottom-0 w-64 rounded-xl border shadow-xl py-2 text-sm bg-white border-slate-200 text-center">
       <div className="px-4 py-3 border-b border-slate-100">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="font-semibold text-slate-900 truncate">{user.name}</p>
