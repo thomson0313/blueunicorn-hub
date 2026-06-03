@@ -64,7 +64,7 @@ export function NavBar() {
         <div className="flex items-center gap-3">
           <Link href="/profile" className="flex items-center gap-2 group">
             <Avatar name={user.name} src={avatarUrl} size={30} />
-            <span className="text-sm text-white hidden sm:flex-col items-center">
+            <span className="text-sm text-white hidden sm:flex-col sm:flex items-center">
               {user.name}
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white uppercase tracking-wide">
                 {user.role}
