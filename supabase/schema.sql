@@ -33,16 +33,21 @@ create table if not exists users (
 create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
   owner uuid not null references users(id) on delete cascade,
+  field_id uuid references member_fields(id),
   title text not null,
   description text not null default '',
+  budget text not null default '',
+  timeline text not null default '',
   completion_rate integer not null default 0 check (completion_rate >= 0 and completion_rate <= 100),
   status text not null default 'in_progress'
-    check (status in ('not_started', 'in_progress', 'completed', 'on_hold')),
+    check (status in ('in_progress', 'completed', 'canceled', 'archived')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists projects_owner_idx on projects(owner);
+create index if not exists projects_field_idx on projects(field_id);
+create index if not exists projects_status_idx on projects(status);
 
 create table if not exists messages (
   id uuid primary key default gen_random_uuid(),

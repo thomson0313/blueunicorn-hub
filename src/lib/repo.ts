@@ -26,13 +26,18 @@ export interface MemberFieldRec {
   createdAt: string;
 }
 
+export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived";
+
 export interface ProjectRec {
   _id: string;
   owner: string;
+  fieldId: string | null;
   title: string;
   description: string;
+  budget: string;
+  timeline: string;
   completionRate: number;
-  status: "not_started" | "in_progress" | "completed" | "on_hold";
+  status: ProjectStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -87,8 +92,11 @@ type MemberFieldRow = {
 type ProjectRow = {
   id: string;
   owner: string;
+  field_id: string | null;
   title: string;
   description: string;
+  budget: string;
+  timeline: string;
   completion_rate: number;
   status: string;
   created_at: string;
@@ -165,14 +173,26 @@ function toMemberFieldRec(row: MemberFieldRow): MemberFieldRec {
   };
 }
 
+const LEGACY_STATUS: Record<string, ProjectStatus> = {
+  not_started: "in_progress",
+  on_hold: "in_progress",
+};
+
+function normalizeStatus(status: string): ProjectStatus {
+  return LEGACY_STATUS[status] ?? (status as ProjectStatus);
+}
+
 function toProjectRec(row: ProjectRow): ProjectRec {
   return {
     _id: row.id,
     owner: row.owner,
+    fieldId: row.field_id ?? null,
     title: row.title,
     description: row.description,
+    budget: row.budget ?? "",
+    timeline: row.timeline ?? "",
     completionRate: row.completion_rate,
-    status: row.status as ProjectRec["status"],
+    status: normalizeStatus(row.status),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -361,34 +381,53 @@ export async function deleteUser(id: string): Promise<boolean> {
 
 /* ---------------------------- Projects ---------------------------- */
 
-type ProjectWithOwner = Omit<ProjectRec, "owner"> & { owner: PublicUser | string };
+export type EnrichedProject = Omit<ProjectRec, "owner"> & {
+  owner: PublicUser | string;
+  fieldName: string | null;
+};
 
-async function attachOwner(p: ProjectRec, users?: UserRec[]): Promise<ProjectWithOwner> {
-  const owner =
+async function enrichProject(p: ProjectRec, users?: UserRec[]): Promise<EnrichedProject> {
+  const ownerUser =
     users?.find((u) => u._id === p.owner) ?? (await findUserById(p.owner));
-  return { ...p, owner: owner ? await publicUser(owner) : p.owner };
+  const fieldName = await getFieldName(p.fieldId);
+  return {
+    ...p,
+    owner: ownerUser ? await publicUser(ownerUser) : p.owner,
+    fieldName,
+  };
 }
 
-export async function listProjectsByOwner(owner: string, populate = false): Promise<ProjectWithOwner[]> {
-  const { data, error } = await getSupabase()
-    .from("projects")
-    .select("*")
-    .eq("owner", owner)
-    .order("updated_at", { ascending: false });
+export type ProjectListFilters = {
+  ownerId?: string;
+  fieldId?: string;
+  status?: ProjectStatus;
+};
+
+export async function listProjects(
+  filters: ProjectListFilters = {},
+  populate = true
+): Promise<EnrichedProject[]> {
+  let query = getSupabase().from("projects").select("*").order("updated_at", { ascending: false });
+  if (filters.ownerId) query = query.eq("owner", filters.ownerId);
+  if (filters.fieldId) query = query.eq("field_id", filters.fieldId);
+  if (filters.status) query = query.eq("status", filters.status);
+
+  const { data, error } = await query;
   dbError(error);
   const projects = (data as ProjectRow[]).map(toProjectRec);
-  if (!populate) return projects;
+  if (!populate) {
+    return projects.map((p) => ({ ...p, owner: p.owner, fieldName: null }));
+  }
   const users = await listUsers();
-  return Promise.all(projects.map((p) => attachOwner(p, users)));
+  return Promise.all(projects.map((p) => enrichProject(p, users)));
 }
 
-export async function listAllProjects(populate = false): Promise<ProjectWithOwner[]> {
-  const { data, error } = await getSupabase().from("projects").select("*").order("updated_at", { ascending: false });
-  dbError(error);
-  const projects = (data as ProjectRow[]).map(toProjectRec);
-  if (!populate) return projects;
-  const users = await listUsers();
-  return Promise.all(projects.map((p) => attachOwner(p, users)));
+export async function listProjectsByOwner(owner: string, populate = true): Promise<EnrichedProject[]> {
+  return listProjects({ ownerId: owner }, populate);
+}
+
+export async function listAllProjects(populate = true): Promise<EnrichedProject[]> {
+  return listProjects({}, populate);
 }
 
 export async function projectCountsByOwner(): Promise<Map<string, number>> {
@@ -410,17 +449,23 @@ export async function findProjectById(id: string): Promise<ProjectRec | null> {
 
 export async function createProject(data: {
   owner: string;
+  fieldId: string;
   title: string;
   description?: string;
+  budget?: string;
+  timeline?: string;
   completionRate?: number;
-  status?: ProjectRec["status"];
-}): Promise<ProjectWithOwner> {
+  status?: ProjectStatus;
+}): Promise<EnrichedProject> {
   const ts = nowISO();
   const row = {
     id: newId(),
     owner: data.owner,
+    field_id: data.fieldId,
     title: data.title,
     description: data.description ?? "",
+    budget: data.budget ?? "",
+    timeline: data.timeline ?? "",
     completion_rate: data.completionRate ?? 0,
     status: data.status ?? "in_progress",
     created_at: ts,
@@ -428,22 +473,28 @@ export async function createProject(data: {
   };
   const { data: created, error } = await getSupabase().from("projects").insert(row).select().single();
   dbError(error);
-  return attachOwner(toProjectRec(created as ProjectRow));
+  return enrichProject(toProjectRec(created as ProjectRow));
 }
 
 export async function updateProject(
   id: string,
-  patch: Partial<Pick<ProjectRec, "title" | "description" | "completionRate" | "status">>
-): Promise<ProjectWithOwner | null> {
+  patch: Partial<
+    Pick<ProjectRec, "owner" | "fieldId" | "title" | "description" | "budget" | "timeline" | "completionRate" | "status">
+  >
+): Promise<EnrichedProject | null> {
   const payload: Record<string, unknown> = { updated_at: nowISO() };
+  if (patch.owner !== undefined) payload.owner = patch.owner;
+  if (patch.fieldId !== undefined) payload.field_id = patch.fieldId;
   if (patch.title !== undefined) payload.title = patch.title;
   if (patch.description !== undefined) payload.description = patch.description;
+  if (patch.budget !== undefined) payload.budget = patch.budget;
+  if (patch.timeline !== undefined) payload.timeline = patch.timeline;
   if (patch.completionRate !== undefined) payload.completion_rate = patch.completionRate;
   if (patch.status !== undefined) payload.status = patch.status;
 
   const { data, error } = await getSupabase().from("projects").update(payload).eq("id", id).select().maybeSingle();
   dbError(error);
-  return data ? attachOwner(toProjectRec(data as ProjectRow)) : null;
+  return data ? enrichProject(toProjectRec(data as ProjectRow)) : null;
 }
 
 export async function deleteProject(id: string): Promise<boolean> {

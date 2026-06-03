@@ -6,12 +6,10 @@ import type { Project as ProjectType, PublicUser } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_LABELS: Record<string, string> = {
-  not_started: "Not started",
-  in_progress: "In progress",
-  completed: "Completed",
-  on_hold: "On hold",
-};
+import { PROJECT_STATUS_LABELS } from "@/lib/project-rules";
+import type { ProjectStatus } from "@/lib/types";
+
+const STATUS_LABELS = PROJECT_STATUS_LABELS as Record<string, string>;
 
 function avg(nums: number[]): number {
   if (nums.length === 0) return 0;
@@ -50,7 +48,7 @@ export default async function DashboardPage() {
               <div key={p._id} className="bg-white rounded-xl border border-slate-200 p-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className="font-medium text-slate-800">{p.title}</span>
-                  <span className="text-xs text-slate-500">{STATUS_LABELS[p.status]}</span>
+                  <span className="text-xs text-slate-500">{STATUS_LABELS[p.status as ProjectStatus] ?? p.status}</span>
                 </div>
                 <ProgressBar value={p.completionRate} />
                 <div className="text-right text-sm text-slate-500 mt-1">{p.completionRate}%</div>

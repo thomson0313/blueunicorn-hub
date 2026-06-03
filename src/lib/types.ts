@@ -38,13 +38,19 @@ export type Profile = {
   fieldName: string | null;
 };
 
+export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived";
+
 export type Project = {
   _id: string;
   owner: PublicUser | string;
+  fieldId: string | null;
+  fieldName: string | null;
   title: string;
   description: string;
+  budget: string;
+  timeline: string;
   completionRate: number;
-  status: "not_started" | "in_progress" | "completed" | "on_hold";
+  status: ProjectStatus;
   createdAt: string;
   updatedAt: string;
 };

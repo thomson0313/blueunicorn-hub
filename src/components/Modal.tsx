@@ -1,0 +1,41 @@
+"use client";
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  wide,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+  wide?: boolean;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close" onClick={onClose} />
+      <div
+        className={`relative bg-white rounded-2xl shadow-xl w-full max-h-[90vh] overflow-y-auto ${
+          wide ? "max-w-lg" : "max-w-md"
+        }`}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+            aria-label="Close dialog"
+          >
+            ×
+          </button>
+        </div>
+        <div className="px-6 py-5">{children}</div>
+      </div>
+    </div>
+  );
+}
