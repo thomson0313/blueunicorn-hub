@@ -5,71 +5,151 @@ import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
 import { ActionButton } from "@/components/ActionButton";
 import { PanelLoader } from "@/components/PanelLoader";
+import { RequiredLabel } from "@/components/RequiredLabel";
+import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
+import { SkillsTagInput, parseSkillsString, skillsToString } from "@/components/profile/SkillsTagInput";
 import { useApp } from "@/components/AppProvider";
-import type { Profile } from "@/lib/types";
+import type { MemberField, Profile } from "@/lib/types";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { setAvatarUrl } = useApp();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [fields, setFields] = useState<MemberField[]>([]);
+
   const [name, setName] = useState("");
-  const [skills, setSkills] = useState("");
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [fieldId, setFieldId] = useState("");
+  const [skillTags, setSkillTags] = useState<string[]>([]);
   const [bio, setBio] = useState("");
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    fetch("/api/profile")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.profile) {
-          setProfile(d.profile);
-          setName(d.profile.name);
-          setSkills(d.profile.skills || "");
-          setBio(d.profile.bio || "");
+    Promise.all([fetch("/api/profile"), fetch("/api/fields")])
+      .then(async ([pRes, fRes]) => {
+        const pData = await pRes.json();
+        const fData = await fRes.json();
+        setFields(fData.fields || []);
+        if (pData.profile) {
+          const p = pData.profile as Profile;
+          setProfile(p);
+          setName(p.name);
+          setEmail(p.email);
+          setUsername(p.username || "");
+          setFieldId(p.fieldId || "");
+          setSkillTags(parseSkillsString(p.skills || ""));
+          setBio(p.bio || "");
         }
       })
       .finally(() => setLoading(false));
   }, []);
 
-  const isDirty =
+  const profileDirty =
     !!profile &&
-    (name !== profile.name || skills !== (profile.skills || "") || bio !== (profile.bio || ""));
+    (name !== profile.name ||
+      email !== profile.email ||
+      (username || "") !== (profile.username || "") ||
+      fieldId !== (profile.fieldId || "") ||
+      skillsToString(skillTags) !== (profile.skills || "") ||
+      bio !== (profile.bio || ""));
 
-  async function save(e: React.FormEvent) {
+  const passwordDirty = !!newPassword || !!currentPassword || !!confirmPassword;
+
+  async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
-    if (!isDirty || saving) return;
+    if (!profileDirty || saving) return;
+    if (passwordDirty) {
+      setError("Use the password section below to change your password.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const res = await fetch("/api/profile", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, skills, bio }),
-    });
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          username: username.trim() || null,
+          fieldId,
+          skills: skillsToString(skillTags),
+          bio,
+        }),
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Could not save");
         return;
       }
       setProfile(data.profile);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
       router.refresh();
     } finally {
       setSaving(false);
     }
   }
 
-  async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
+  async function savePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newPassword || saving) return;
+    if (newPassword !== confirmPassword) {
+      setError("New passwords do not match");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not update password");
+        return;
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setError("");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || uploading) return;
+    if (!file) return;
+    setCropFile(file);
+    setCropOpen(true);
+    e.target.value = "";
+  }
+
+  async function uploadCropped(blob: Blob) {
+    setCropOpen(false);
+    setCropFile(null);
     setUploading(true);
     setError("");
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", blob, "avatar.jpg");
       const res = await fetch("/api/profile/avatar", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) {
@@ -95,19 +175,14 @@ export default function ProfilePage() {
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <div className="flex items-center gap-5">
-          <Avatar name={profile.name} src={profile.avatarUrl} size={88} />
+          <Avatar name={profile.name} src={profile.avatarUrl} size={88} bordered />
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold text-slate-900">{profile.name}</h2>
               <span className="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 uppercase">
                 {profile.role}
               </span>
             </div>
-            <p className="text-sm text-slate-500">
-              {profile.username ? `@${profile.username} · ` : ""}
-              {profile.email}
-              {profile.fieldName ? ` · ${profile.fieldName}` : ""}
-            </p>
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
@@ -121,26 +196,57 @@ export default function ProfilePage() {
               type="file"
               accept="image/png,image/jpeg,image/webp,image/gif"
               className="hidden"
-              onChange={uploadAvatar}
+              onChange={onFileSelect}
             />
           </div>
         </div>
       </div>
 
-      <form onSubmit={save} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+      <form onSubmit={saveProfile} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-slate-900">Account</h2>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Display name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} required className={inputClass} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Skills</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
           <input
-            value={skills}
-            onChange={(e) => setSkills(e.target.value)}
-            placeholder="e.g. React, Node.js, UI design"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
             className={inputClass}
           />
-          <p className="text-xs text-slate-400 mt-1">Separate skills with commas.</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="letters, numbers, underscores"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <RequiredLabel>Field</RequiredLabel>
+          <select
+            required
+            value={fieldId}
+            onChange={(e) => setFieldId(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Select a field</option>
+            {fields.map((f) => (
+              <option key={f._id} value={f._id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Skills</label>
+          <SkillsTagInput tags={skillTags} onChange={setSkillTags} />
+          <p className="text-xs text-slate-400 mt-1">Type a skill and press Enter to add.</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Bio</label>
@@ -153,12 +259,62 @@ export default function ProfilePage() {
           />
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <div className="flex items-center gap-3">
-          <ActionButton type="submit" loading={saving} loadingText="Saving..." disabled={!isDirty}>
-            Save changes
-          </ActionButton>
-        </div>
+        <ActionButton type="submit" loading={saving} loadingText="Saving..." disabled={!profileDirty}>
+          Save changes
+        </ActionButton>
       </form>
+
+      <form onSubmit={savePassword} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-slate-900">Password</h2>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Current password</label>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">New password</label>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Confirm new password</label>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            className={inputClass}
+          />
+        </div>
+        <ActionButton
+          type="submit"
+          loading={saving}
+          loadingText="Updating..."
+          disabled={!newPassword || !currentPassword}
+        >
+          Update password
+        </ActionButton>
+      </form>
+
+      <AvatarCropModal
+        open={cropOpen}
+        file={cropFile}
+        onClose={() => {
+          setCropOpen(false);
+          setCropFile(null);
+        }}
+        onConfirm={uploadCropped}
+      />
     </div>
   );
 }

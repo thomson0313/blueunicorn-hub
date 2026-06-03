@@ -435,12 +435,34 @@ export async function createUser(data: {
   return toUserRec(created as UserRow);
 }
 
+export async function isEmailOrUsernameTakenByOther(
+  email: string,
+  username: string | null | undefined,
+  excludeUserId: string
+): Promise<boolean> {
+  const e = email.toLowerCase();
+  const parts = [`email.eq.${e}`];
+  if (username) parts.push(`username.eq.${username}`);
+  const { data, error } = await getSupabase()
+    .from("users")
+    .select("id")
+    .or(parts.join(","))
+    .neq("id", excludeUserId);
+  dbError(error);
+  return (data?.length ?? 0) > 0;
+}
+
 export async function updateUser(
   id: string,
-  patch: Partial<Pick<UserRec, "name" | "role" | "passwordHash" | "avatarUrl" | "skills" | "bio">>
+  patch: Partial<
+    Pick<UserRec, "name" | "role" | "passwordHash" | "avatarUrl" | "skills" | "bio" | "email" | "username" | "fieldId">
+  >
 ): Promise<UserRec | null> {
   const payload: Record<string, unknown> = { updated_at: nowISO() };
   if (patch.name !== undefined) payload.name = patch.name;
+  if (patch.email !== undefined) payload.email = patch.email.toLowerCase();
+  if (patch.username !== undefined) payload.username = patch.username || null;
+  if (patch.fieldId !== undefined) payload.field_id = patch.fieldId;
   if (patch.role !== undefined) payload.role = patch.role;
   if (patch.passwordHash !== undefined) payload.password_hash = patch.passwordHash;
   if (patch.avatarUrl !== undefined) payload.avatar_url = patch.avatarUrl;
