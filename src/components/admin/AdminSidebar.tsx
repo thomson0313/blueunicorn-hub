@@ -30,7 +30,7 @@ const ADMIN_LINKS: NavItem[] = [
 const APP_LINKS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: <IconDashboard /> },
   { href: "/chat", label: "Chat", icon: <IconChat /> },
-  { href: "/profile", label: "Profile", icon: <IconProfile /> },
+  // { href: "/profile", label: "Profile", icon: <IconProfile /> },
 ];
 
 export function AdminSidebar() {
@@ -123,16 +123,16 @@ export function AdminSidebar() {
 
         <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-6">
           <div className="space-y-0.5">
-            {!collapsed && (
-              <p className="px-3 text-[10px] uppercase tracking-wider text-brand-200 mb-2">Management</p>
-            )}
-            {ADMIN_LINKS.map((l) => (
+            {!collapsed && <p className="px-3 text-[10px] uppercase tracking-wider text-brand-200 mb-2">App</p>}
+            {APP_LINKS.map((l) => (
               <NavLink key={l.href} item={l} />
             ))}
           </div>
           <div className="space-y-0.5">
-            {!collapsed && <p className="px-3 text-[10px] uppercase tracking-wider text-brand-200 mb-2">App</p>}
-            {APP_LINKS.map((l) => (
+            {!collapsed && (
+              <p className="px-3 text-[10px] uppercase tracking-wider text-brand-200 mb-2">Management</p>
+            )}
+            {ADMIN_LINKS.map((l) => (
               <NavLink key={l.href} item={l} />
             ))}
           </div>
