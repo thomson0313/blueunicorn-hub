@@ -64,7 +64,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
   const [editing, setEditing] = useState<Project | null>(null);
   const [form, setForm] = useState<ProjectForm>(emptyForm());
   const [menuId, setMenuId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
 
   const loadMeta = useCallback(async () => {
     const fieldRes = await fetch("/api/fields");
@@ -105,12 +105,19 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
   }, [loadProjects]);
 
   useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuId(null);
+    if (!menuId) return;
+    function onOutside(e: MouseEvent) {
+      if (menuContainerRef.current?.contains(e.target as Node)) return;
+      setMenuId(null);
     }
-    document.addEventListener("click", onDocClick);
-    return () => document.removeEventListener("click", onDocClick);
-  }, []);
+    const timer = window.setTimeout(() => {
+      document.addEventListener("mousedown", onOutside);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", onOutside);
+    };
+  }, [menuId]);
 
   const title = isAdmin ? "All Projects" : "My Projects";
   const subtitle = isAdmin
@@ -328,38 +335,60 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
   function ProjectMenu({ p }: { p: Project }) {
     const open = menuId === p._id;
     return (
-      <div className="relative" ref={open ? menuRef : undefined}>
+      <div
+        data-project-menu
+        className={`relative ${open ? "z-30" : ""}`}
+        ref={open ? menuContainerRef : undefined}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
+            e.preventDefault();
             setMenuId(open ? null : p._id);
           }}
           className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           aria-label="Project actions"
+          aria-expanded={open}
         >
           ⋮
         </button>
         {open && (
-          <div className="absolute right-0 top-8 z-10 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm">
+          <div
+            className="absolute right-0 top-8 z-50 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               className="w-full text-left px-3 py-2 hover:bg-slate-50 text-amber-700"
-              onClick={() => patchStatus(p._id, "canceled")}
+              onClick={(e) => {
+                e.stopPropagation();
+                void patchStatus(p._id, "canceled");
+              }}
             >
               Cancel
             </button>
             <button
               type="button"
               className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
-              onClick={() => patchStatus(p._id, "archived")}
+              onClick={(e) => {
+                e.stopPropagation();
+                void patchStatus(p._id, "archived");
+              }}
             >
               Archive
             </button>
             <button
               type="button"
               className="w-full text-left px-3 py-2 hover:bg-slate-50 text-red-600"
-              onClick={() => removeProject(p._id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                void removeProject(p._id);
+              }}
             >
               Delete
             </button>
@@ -369,14 +398,19 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
     );
   }
 
+  function handleCardActivate(e: React.MouseEvent, p: Project) {
+    if ((e.target as HTMLElement).closest("[data-project-menu]")) return;
+    openEdit(p);
+  }
+
   function ProjectCard({ p }: { p: Project }) {
     return (
       <article
         role="button"
         tabIndex={0}
-        onClick={() => openEdit(p)}
+        onClick={(e) => handleCardActivate(e, p)}
         onKeyDown={(e) => e.key === "Enter" && openEdit(p)}
-        className="bg-white rounded-xl border border-slate-200 p-5 hover:border-brand-300 hover:shadow-sm transition cursor-pointer text-left"
+        className="bg-white rounded-xl border border-slate-200 p-5 hover:border-brand-300 hover:shadow-sm transition cursor-pointer text-left relative"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -389,9 +423,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
             )}
             {p.fieldName && <p className="text-xs text-brand-600">{p.fieldName}</p>}
           </div>
-          <div onClick={(e) => e.stopPropagation()}>
-            <ProjectMenu p={p} />
-          </div>
+          <ProjectMenu p={p} />
         </div>
         {p.description && <p className="text-sm text-slate-500 mt-2 line-clamp-2">{p.description}</p>}
         <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
@@ -414,9 +446,9 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
       <article
         role="button"
         tabIndex={0}
-        onClick={() => openEdit(p)}
+        onClick={(e) => handleCardActivate(e, p)}
         onKeyDown={(e) => e.key === "Enter" && openEdit(p)}
-        className="bg-white rounded-xl border border-slate-200 p-4 hover:border-brand-300 transition cursor-pointer flex items-center gap-4"
+        className="bg-white rounded-xl border border-slate-200 p-4 hover:border-brand-300 transition cursor-pointer flex items-center gap-4 relative"
       >
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -434,9 +466,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
           <ProgressBar value={p.completionRate} />
           <p className="text-xs text-right text-slate-500 mt-1">{p.completionRate}%</p>
         </div>
-        <div onClick={(e) => e.stopPropagation()}>
-          <ProjectMenu p={p} />
-        </div>
+        <ProjectMenu p={p} />
       </article>
     );
   }
@@ -544,7 +574,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
           </button>
         </div>
       ) : view === "grid" ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 overflow-visible">
           {projects.map((p) => (
             <ProjectCard key={p._id} p={p} />
           ))}
