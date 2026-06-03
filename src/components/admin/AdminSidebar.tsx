@@ -63,7 +63,7 @@ export function AdminSidebar() {
       )}
       <aside className={asideClass}>
         <div className={`relative border-b border-white/10 shrink-0 ${collapsed ? "px-2 py-4" : "px-4 py-5"}`}>
-          <Link href="/admin/projects" className={`flex ${collapsed ? "flex-col items-center" : "items-start gap-2"}`}>
+          <Link href="/admin/projects" className={`flex-col ${collapsed ? "flex-col items-center" : "items-start"}`}>
             <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
               <Image
                 src="/blunicorn-logo.png"
