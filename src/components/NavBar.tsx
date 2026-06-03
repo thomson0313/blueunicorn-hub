@@ -16,7 +16,7 @@ export function NavBar() {
     { href: "/projects", label: "My Projects", memberOnly: true },
     { href: "/chat", label: "Chat" },
     { href: "/admin/projects", label: "Admin panel", adminOnly: true, adminNavOnly: true },
-    { href: "/profile", label: "Profile" },
+    // { href: "/profile", label: "Profile" },
   ].filter((l) => {
     if (l.adminNavOnly && pathname.startsWith("/admin")) return false;
     if (l.adminOnly) return user.role === "admin";
