@@ -6,12 +6,14 @@ export function Modal({
   title,
   children,
   wide,
+  xl,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
   wide?: boolean;
+  xl?: boolean;
 }) {
   if (!open) return null;
 
@@ -20,7 +22,7 @@ export function Modal({
       <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close" onClick={onClose} />
       <div
         className={`relative bg-white rounded-2xl shadow-xl w-full max-h-[90vh] overflow-y-auto ${
-          wide ? "max-w-lg" : "max-w-md"
+          xl ? "max-w-6xl" : wide ? "max-w-lg" : "max-w-md"
         }`}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">

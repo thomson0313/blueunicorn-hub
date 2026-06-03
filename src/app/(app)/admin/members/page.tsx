@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Avatar } from "@/components/Avatar";
 import { PanelLoader } from "@/components/PanelLoader";
 
 type Member = {
@@ -9,6 +10,7 @@ type Member = {
   email: string;
   username: string | null;
   role: "admin" | "member";
+  avatarUrl?: string | null;
   projectCount?: number;
 };
 
@@ -160,8 +162,9 @@ export default function AdminMembersPage() {
               {members.map((m) => (
                 <tr key={m._id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-medium text-slate-800">
-                    <a href={`/u/${m._id}`} className="hover:text-brand-600 hover:underline">
-                      {m.name}
+                    <a href={`/u/${m._id}`} className="flex items-center gap-2 hover:text-brand-600">
+                      <Avatar name={m.name} src={m.avatarUrl} size={32} />
+                      <span className="hover:underline">{m.name}</span>
                     </a>
                   </td>
                   <td className="px-5 py-3 text-slate-500">

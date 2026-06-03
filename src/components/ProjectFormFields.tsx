@@ -1,7 +1,7 @@
 "use client";
 
-import { ProgressBar } from "@/components/ProgressBar";
 import { RequiredLabel } from "@/components/RequiredLabel";
+import { MemberAssignSelect, type MemberOption } from "@/components/projects/MemberAssignSelect";
 import type { MemberField } from "@/lib/types";
 
 export type ProjectFormState = {
@@ -10,11 +10,11 @@ export type ProjectFormState = {
   fieldId: string;
   budget: string;
   timeline: string;
+  previewLink: string;
+  githubLink: string;
   assignTo: string;
   completionRate: number;
 };
-
-type MemberOption = { _id: string; name: string };
 
 const INPUT_CLASS =
   "w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500";
@@ -93,31 +93,36 @@ export function ProjectFormFields({
           />
         </div>
       </div>
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Preview link</label>
+        <input
+          value={form.previewLink}
+          onChange={(e) => onChange({ previewLink: e.target.value })}
+          className={INPUT_CLASS}
+          placeholder="https://..."
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">GitHub repository</label>
+        <input
+          value={form.githubLink}
+          onChange={(e) => onChange({ githubLink: e.target.value })}
+          className={INPUT_CLASS}
+          placeholder="https://github.com/..."
+        />
+      </div>
       {showAssign && (
         <div>
           <RequiredLabel>Assign to</RequiredLabel>
-          <select
-            required
-            value={form.assignTo}
-            onChange={(e) => onChange({ assignTo: e.target.value })}
-            className={INPUT_CLASS}
-          >
-            <option value="">Select a member</option>
-            {members.map((m) => (
-              <option key={m._id} value={m._id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+          <MemberAssignSelect value={form.assignTo} members={members} onChange={(id) => onChange({ assignTo: id })} />
         </div>
       )}
       {showProgress && (
         <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span className="text-slate-600">Progress</span>
-            <span className="font-semibold">{form.completionRate}%</span>
+          <div className="flex justify-between text-sm mb-2">
+            <span className="text-slate-600 font-medium">Progress</span>
+            <span className="font-semibold text-brand-700">{form.completionRate}%</span>
           </div>
-          <ProgressBar value={form.completionRate} />
           <input
             type="range"
             min={0}
@@ -125,7 +130,7 @@ export function ProjectFormFields({
             step={5}
             value={form.completionRate}
             onChange={(e) => onChange({ completionRate: Number(e.target.value) })}
-            className="w-full mt-2 accent-brand-600 cursor-pointer"
+            className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-brand-600 bg-slate-200"
           />
           <p className="text-xs text-slate-400 mt-1">At 100%, status becomes Completed.</p>
         </div>

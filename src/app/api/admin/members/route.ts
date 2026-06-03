@@ -18,6 +18,7 @@ export async function GET() {
       email: u.email,
       username: u.username ?? null,
       role: u.role,
+      avatarUrl: u.avatarUrl ?? null,
       createdAt: u.createdAt,
       projectCount: counts.get(u._id) || 0,
     }));

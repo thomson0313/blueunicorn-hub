@@ -15,12 +15,10 @@ export function NavBar() {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/projects", label: "My Projects", memberOnly: true },
     { href: "/chat", label: "Chat" },
-    { href: "/admin/projects", label: "Projects", adminOnly: true },
-    { href: "/admin/members", label: "Members", adminOnly: true },
-    { href: "/admin/fields", label: "Fields", adminOnly: true },
-    { href: "/admin/alerts", label: "Alerts", adminOnly: true },
+    { href: "/admin/projects", label: "Admin panel", adminOnly: true, adminNavOnly: true },
     { href: "/profile", label: "Profile" },
   ].filter((l) => {
+    if (l.adminNavOnly && pathname.startsWith("/admin")) return false;
     if (l.adminOnly) return user.role === "admin";
     if (l.memberOnly) return user.role === "member";
     return true;

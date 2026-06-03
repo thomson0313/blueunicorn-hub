@@ -13,6 +13,8 @@ const createSchema = z.object({
   fieldId: z.string().uuid("Please select a field"),
   budget: z.string().max(120).optional().default(""),
   timeline: z.string().max(200).optional().default(""),
+  previewLink: z.string().max(500).optional().default(""),
+  githubLink: z.string().max(500).optional().default(""),
   assignTo: z.string().uuid().optional(),
 });
 
@@ -78,6 +80,8 @@ export async function POST(req: Request) {
       description: parsed.data.description,
       budget: parsed.data.budget,
       timeline: parsed.data.timeline,
+      previewLink: parsed.data.previewLink || "",
+      githubLink: parsed.data.githubLink || "",
     });
 
     return NextResponse.json({ project }, { status: 201 });

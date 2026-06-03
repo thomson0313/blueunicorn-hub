@@ -13,6 +13,8 @@ const updateSchema = z.object({
   fieldId: z.string().uuid().optional(),
   budget: z.string().max(120).optional(),
   timeline: z.string().max(200).optional(),
+  previewLink: z.string().max(500).optional(),
+  githubLink: z.string().max(500).optional(),
   completionRate: z.number().min(0).max(100).optional(),
   status: statusEnum.optional(),
   assignTo: z.string().uuid().optional(),
@@ -46,6 +48,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (parsed.data.description !== undefined) patch.description = parsed.data.description;
     if (parsed.data.budget !== undefined) patch.budget = parsed.data.budget;
     if (parsed.data.timeline !== undefined) patch.timeline = parsed.data.timeline;
+    if (parsed.data.previewLink !== undefined) patch.previewLink = parsed.data.previewLink;
+    if (parsed.data.githubLink !== undefined) patch.githubLink = parsed.data.githubLink;
 
     if (parsed.data.fieldId !== undefined) {
       const field = await findMemberFieldById(parsed.data.fieldId);

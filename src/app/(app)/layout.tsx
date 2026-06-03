@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { AppProvider } from "@/components/AppProvider";
-import { NavBar } from "@/components/NavBar";
+import { AppChrome } from "@/components/AppChrome";
 import { AlertToaster } from "@/components/AlertToaster";
 import { FloatingChat } from "@/components/FloatingChat";
 
@@ -11,8 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppProvider user={session}>
-      <NavBar />
-      <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
+      <AppChrome>{children}</AppChrome>
       <AlertToaster />
       <FloatingChat />
     </AppProvider>

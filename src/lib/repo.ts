@@ -36,10 +36,30 @@ export interface ProjectRec {
   description: string;
   budget: string;
   timeline: string;
+  previewLink: string;
+  githubLink: string;
   completionRate: number;
   status: ProjectStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProjectCommentRec {
+  _id: string;
+  projectId: string;
+  authorId: string;
+  parentId: string | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectCommentReactionRec {
+  _id: string;
+  commentId: string;
+  userId: string;
+  emoji: string;
+  createdAt: string;
 }
 
 export interface MessageRec {
@@ -97,10 +117,30 @@ type ProjectRow = {
   description: string;
   budget: string;
   timeline: string;
+  preview_link?: string;
+  github_link?: string;
   completion_rate: number;
   status: string;
   created_at: string;
   updated_at: string;
+};
+
+type ProjectCommentRow = {
+  id: string;
+  project_id: string;
+  author_id: string;
+  parent_id: string | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type ProjectCommentReactionRow = {
+  id: string;
+  comment_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
 };
 
 type MessageRow = {
@@ -191,10 +231,34 @@ function toProjectRec(row: ProjectRow): ProjectRec {
     description: row.description,
     budget: row.budget ?? "",
     timeline: row.timeline ?? "",
+    previewLink: row.preview_link ?? "",
+    githubLink: row.github_link ?? "",
     completionRate: row.completion_rate,
     status: normalizeStatus(row.status),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function toProjectCommentRec(row: ProjectCommentRow): ProjectCommentRec {
+  return {
+    _id: row.id,
+    projectId: row.project_id,
+    authorId: row.author_id,
+    parentId: row.parent_id,
+    body: row.body,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toProjectCommentReactionRec(row: ProjectCommentReactionRow): ProjectCommentReactionRec {
+  return {
+    _id: row.id,
+    commentId: row.comment_id,
+    userId: row.user_id,
+    emoji: row.emoji,
+    createdAt: row.created_at,
   };
 }
 
@@ -247,6 +311,21 @@ export async function getFieldName(fieldId: string | null | undefined): Promise<
   const field = await findMemberFieldById(fieldId);
   if (field) fieldNameCache.set(fieldId, field.name);
   return field?.name ?? null;
+}
+
+function stubPublicUser(id: string, name = "Unknown"): PublicUser {
+  return {
+    _id: id,
+    name,
+    email: "",
+    username: null,
+    role: "member",
+    avatarUrl: null,
+    skills: "",
+    bio: "",
+    fieldId: null,
+    fieldName: null,
+  };
 }
 
 export async function publicUser(u: UserRec): Promise<PublicUser> {
@@ -454,6 +533,8 @@ export async function createProject(data: {
   description?: string;
   budget?: string;
   timeline?: string;
+  previewLink?: string;
+  githubLink?: string;
   completionRate?: number;
   status?: ProjectStatus;
 }): Promise<EnrichedProject> {
@@ -466,6 +547,8 @@ export async function createProject(data: {
     description: data.description ?? "",
     budget: data.budget ?? "",
     timeline: data.timeline ?? "",
+    preview_link: data.previewLink ?? "",
+    github_link: data.githubLink ?? "",
     completion_rate: data.completionRate ?? 0,
     status: data.status ?? "in_progress",
     created_at: ts,
@@ -479,7 +562,19 @@ export async function createProject(data: {
 export async function updateProject(
   id: string,
   patch: Partial<
-    Pick<ProjectRec, "owner" | "fieldId" | "title" | "description" | "budget" | "timeline" | "completionRate" | "status">
+    Pick<
+      ProjectRec,
+      | "owner"
+      | "fieldId"
+      | "title"
+      | "description"
+      | "budget"
+      | "timeline"
+      | "previewLink"
+      | "githubLink"
+      | "completionRate"
+      | "status"
+    >
   >
 ): Promise<EnrichedProject | null> {
   const payload: Record<string, unknown> = { updated_at: nowISO() };
@@ -489,6 +584,8 @@ export async function updateProject(
   if (patch.description !== undefined) payload.description = patch.description;
   if (patch.budget !== undefined) payload.budget = patch.budget;
   if (patch.timeline !== undefined) payload.timeline = patch.timeline;
+  if (patch.previewLink !== undefined) payload.preview_link = patch.previewLink;
+  if (patch.githubLink !== undefined) payload.github_link = patch.githubLink;
   if (patch.completionRate !== undefined) payload.completion_rate = patch.completionRate;
   if (patch.status !== undefined) payload.status = patch.status;
 
@@ -501,6 +598,136 @@ export async function deleteProject(id: string): Promise<boolean> {
   const { data, error } = await getSupabase().from("projects").delete().eq("id", id).select("id").maybeSingle();
   dbError(error);
   return !!data;
+}
+
+export function canAccessProjectComments(userId: string, role: Role, ownerId: string): boolean {
+  return role === "admin" || ownerId === userId;
+}
+
+export type EnrichedProjectComment = ProjectCommentRec & {
+  author: PublicUser;
+  reactions: { emoji: string; userId: string; userName: string }[];
+};
+
+export async function listProjectComments(projectId: string): Promise<EnrichedProjectComment[]> {
+  const { data: comments, error: cErr } = await getSupabase()
+    .from("project_comments")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true });
+  dbError(cErr);
+  const rows = (comments as ProjectCommentRow[] | null) ?? [];
+  if (rows.length === 0) return [];
+
+  const commentIds = rows.map((r) => r.id);
+  const { data: reactions, error: rErr } = await getSupabase()
+    .from("project_comment_reactions")
+    .select("*")
+    .in("comment_id", commentIds);
+  dbError(rErr);
+  const reactionRows = (reactions as ProjectCommentReactionRow[] | null) ?? [];
+
+  const users = await listUsers();
+  const userMap = new Map(users.map((u) => [u._id, u]));
+
+  const reactionsByCommentId = new Map<string, { emoji: string; userId: string; userName: string }[]>();
+  for (const row of reactionRows) {
+    const u = userMap.get(row.user_id);
+    const list = reactionsByCommentId.get(row.comment_id) ?? [];
+    list.push({ emoji: row.emoji, userId: row.user_id, userName: u?.name ?? "Member" });
+    reactionsByCommentId.set(row.comment_id, list);
+  }
+
+  const enriched: EnrichedProjectComment[] = [];
+  for (const row of rows) {
+    const authorUser = userMap.get(row.author_id);
+    enriched.push({
+      ...toProjectCommentRec(row),
+      author: authorUser ? await publicUser(authorUser) : stubPublicUser(row.author_id),
+      reactions: reactionsByCommentId.get(row.id) ?? [],
+    });
+  }
+  return enriched;
+}
+
+export async function createProjectComment(data: {
+  projectId: string;
+  authorId: string;
+  body: string;
+  parentId?: string | null;
+}): Promise<EnrichedProjectComment | null> {
+  const ts = nowISO();
+  const row = {
+    id: newId(),
+    project_id: data.projectId,
+    author_id: data.authorId,
+    parent_id: data.parentId ?? null,
+    body: data.body.trim(),
+    created_at: ts,
+    updated_at: ts,
+  };
+  const { data: created, error } = await getSupabase().from("project_comments").insert(row).select().single();
+  dbError(error);
+  const rec = toProjectCommentRec(created as ProjectCommentRow);
+  const author = await findUserById(rec.authorId);
+  return {
+    ...rec,
+    author: author ? await publicUser(author) : stubPublicUser(rec.authorId),
+    reactions: [],
+  };
+}
+
+export async function findProjectCommentById(id: string): Promise<ProjectCommentRec | null> {
+  const { data, error } = await getSupabase().from("project_comments").select("*").eq("id", id).maybeSingle();
+  dbError(error);
+  return data ? toProjectCommentRec(data as ProjectCommentRow) : null;
+}
+
+export async function updateProjectComment(id: string, body: string): Promise<ProjectCommentRec | null> {
+  const { data, error } = await getSupabase()
+    .from("project_comments")
+    .update({ body: body.trim(), updated_at: nowISO() })
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  dbError(error);
+  return data ? toProjectCommentRec(data as ProjectCommentRow) : null;
+}
+
+export async function deleteProjectComment(id: string): Promise<boolean> {
+  const { data, error } = await getSupabase().from("project_comments").delete().eq("id", id).select("id").maybeSingle();
+  dbError(error);
+  return !!data;
+}
+
+export async function toggleProjectCommentReaction(
+  commentId: string,
+  userId: string,
+  emoji: string
+): Promise<{ added: boolean }> {
+  const { data: existing } = await getSupabase()
+    .from("project_comment_reactions")
+    .select("id")
+    .eq("comment_id", commentId)
+    .eq("user_id", userId)
+    .eq("emoji", emoji)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await getSupabase().from("project_comment_reactions").delete().eq("id", (existing as { id: string }).id);
+    dbError(error);
+    return { added: false };
+  }
+
+  const { error } = await getSupabase().from("project_comment_reactions").insert({
+    id: newId(),
+    comment_id: commentId,
+    user_id: userId,
+    emoji,
+    created_at: nowISO(),
+  });
+  dbError(error);
+  return { added: true };
 }
 
 /* ---------------------------- Messages ---------------------------- */

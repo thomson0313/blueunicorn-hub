@@ -49,10 +49,30 @@ export type Project = {
   description: string;
   budget: string;
   timeline: string;
+  previewLink: string;
+  githubLink: string;
   completionRate: number;
   status: ProjectStatus;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ProjectCommentReaction = {
+  emoji: string;
+  userId: string;
+  userName: string;
+};
+
+export type ProjectComment = {
+  _id: string;
+  projectId: string;
+  parentId: string | null;
+  body: string;
+  author: PublicUser;
+  createdAt: string;
+  updatedAt: string;
+  reactions: ProjectCommentReaction[];
+  replies: ProjectComment[];
 };
 
 export type ChatMessage = {
