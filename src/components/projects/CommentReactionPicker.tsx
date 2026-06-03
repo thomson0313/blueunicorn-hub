@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { IconSmilePlus } from "@/components/icons/NavIcons";
 
 export const COMMENT_REACTIONS = ["👍", "👎", "❤️", "😄", "🎉", "🔥"] as const;
 
@@ -44,11 +45,11 @@ export function CommentReactionPicker({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:border-slate-300 cursor-pointer text-sm"
+        className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:border-slate-300 hover:text-brand-600 cursor-pointer"
         aria-label="Add reaction"
         aria-expanded={open}
       >
-        <span aria-hidden>😊</span>
+        <IconSmilePlus size={16} />
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 z-30 flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-full shadow-lg">

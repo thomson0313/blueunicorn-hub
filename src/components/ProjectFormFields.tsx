@@ -2,6 +2,7 @@
 
 import { ProgressBar } from "@/components/ProgressBar";
 import { RequiredLabel } from "@/components/RequiredLabel";
+import { timelineToInputValue } from "@/lib/project-timeline";
 import { MemberAssignSelect, type MemberOption } from "@/components/projects/MemberAssignSelect";
 import type { MemberField } from "@/lib/types";
 
@@ -85,12 +86,12 @@ export function ProjectFormFields({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Timeline</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Due date</label>
           <input
-            value={form.timeline}
+            type="date"
+            value={timelineToInputValue(form.timeline)}
             onChange={(e) => onChange({ timeline: e.target.value })}
             className={INPUT_CLASS}
-            placeholder="e.g. Q2 2026"
           />
         </div>
       </div>

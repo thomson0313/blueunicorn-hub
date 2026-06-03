@@ -1,11 +1,10 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { NavBar } from "@/components/NavBar";
-import { AdminSidebar, AdminMobileBar } from "@/components/admin/AdminSidebar";
+import { useApp } from "@/components/AppProvider";
 import { AdminLayoutProvider } from "@/components/admin/AdminLayoutContext";
 import { useAdminLayout } from "@/components/admin/AdminLayoutContext";
-import { useApp } from "@/components/AppProvider";
+import { AdminSidebar, AdminMobileBar } from "@/components/admin/AdminSidebar";
+import { NavBar } from "@/components/NavBar";
 
 function AdminShell({ children }: { children: React.ReactNode }) {
   const { sidebarWidth } = useAdminLayout();
@@ -22,11 +21,10 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 }
 
 export function AppChrome({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
   const { user } = useApp();
-  const isAdminPanel = pathname.startsWith("/admin") && user.role === "admin";
+  const isAdmin = user.role === "admin";
 
-  if (isAdminPanel) {
+  if (isAdmin) {
     return (
       <AdminLayoutProvider>
         <AdminShell>{children}</AdminShell>

@@ -11,7 +11,10 @@ import { PanelLoader } from "@/components/PanelLoader";
 import { ProjectFormFields, type ProjectFormState } from "@/components/ProjectFormFields";
 import { ProjectCommentsPanel } from "@/components/projects/ProjectCommentsPanel";
 import { ProjectLinkIcons, displayBudgetTimeline } from "@/components/projects/ProjectLinkIcons";
+import { ProjectTimelineDisplay } from "@/components/projects/ProjectTimelineDisplay";
 import type { MemberOption } from "@/components/projects/MemberAssignSelect";
+import { isProjectUrgent } from "@/lib/project-timeline";
+import { sortProjects, type ProjectSortKey } from "@/lib/project-sort";
 import { timeAgo } from "@/lib/time-ago";
 
 type Mode = "member" | "admin";
@@ -22,6 +25,13 @@ const STATUS_OPTIONS: { value: ProjectStatus | "all"; label: string }[] = [
   { value: "completed", label: "Completed" },
   { value: "canceled", label: "Canceled" },
   { value: "archived", label: "Archived" },
+];
+
+const SORT_OPTIONS: { value: ProjectSortKey; label: string }[] = [
+  { value: "default", label: "Sort: Default" },
+  { value: "budget", label: "Sort: Budget" },
+  { value: "timeline", label: "Sort: Timeline" },
+  { value: "progress", label: "Sort: Progress" },
 ];
 
 const emptyForm = (): ProjectFormState => ({
@@ -55,6 +65,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
   const [fieldFilter, setFieldFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
   const [memberFilter, setMemberFilter] = useState("all");
+  const [sortBy, setSortBy] = useState<ProjectSortKey>("default");
   const [error, setError] = useState("");
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -295,6 +306,8 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
     [members]
   );
 
+  const displayedProjects = useMemo(() => sortProjects(projects, sortBy), [projects, sortBy]);
+
   function ProjectMenu({ p }: { p: Project }) {
     const open = menuId === p._id;
     return (
@@ -373,15 +386,16 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
   function ProjectCard({ p }: { p: Project }) {
     const owner = ownerInfo(p.owner);
     const busy = boardUpdating && (actionBusy?.startsWith(p._id) ?? false);
+    const urgent = isProjectUrgent(p.createdAt, p.timeline, p.status);
     return (
       <article
         role="button"
         tabIndex={0}
         onClick={(e) => handleCardActivate(e, p)}
         onKeyDown={(e) => e.key === "Enter" && openEdit(p)}
-        className={`bg-white rounded-xl border border-slate-200 p-5 hover:border-brand-300 hover:shadow-sm transition cursor-pointer text-left relative ${
-          busy ? "opacity-60 pointer-events-none" : ""
-        }`}
+        className={`bg-white rounded-xl border p-5 hover:shadow-sm transition cursor-pointer text-left relative ${
+          urgent ? "border-red-400 hover:border-red-500" : "border-slate-200 hover:border-brand-300"
+        } ${busy ? "opacity-60 pointer-events-none" : ""}`}
       >
         {busy && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-xl z-10">
@@ -407,9 +421,9 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
           <ProjectMenu p={p} />
         </div>
         {p.description && <p className="text-sm text-slate-500 mt-2 line-clamp-2">{p.description}</p>}
-        <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
-          <span>Budget: {displayBudgetTimeline(p.budget)}</span>
-          <span>Timeline: {displayBudgetTimeline(p.timeline)}</span>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <span className="text-slate-500">Budget: {displayBudgetTimeline(p.budget)}</span>
+          <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
         </div>
         <div className="mt-4">
           <div className="flex justify-between text-sm mb-1">
@@ -425,15 +439,16 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
   function ProjectRow({ p }: { p: Project }) {
     const owner = ownerInfo(p.owner);
     const busy = boardUpdating && (actionBusy?.startsWith(p._id) ?? false);
+    const urgent = isProjectUrgent(p.createdAt, p.timeline, p.status);
     return (
       <article
         role="button"
         tabIndex={0}
         onClick={(e) => handleCardActivate(e, p)}
         onKeyDown={(e) => e.key === "Enter" && openEdit(p)}
-        className={`bg-white rounded-xl border border-slate-200 p-4 hover:border-brand-300 transition cursor-pointer flex items-center gap-4 relative ${
-          busy ? "opacity-60 pointer-events-none" : ""
-        }`}
+        className={`bg-white rounded-xl border p-4 transition cursor-pointer flex items-center gap-4 relative ${
+          urgent ? "border-red-400 hover:border-red-500" : "border-slate-200 hover:border-brand-300"
+        } ${busy ? "opacity-60 pointer-events-none" : ""}`}
       >
         {busy && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-xl z-10">
@@ -453,10 +468,10 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
               <span>{owner.name}</span>
             </div>
           )}
-          <div className="flex flex-wrap gap-3 text-xs text-slate-500 mt-1">
-            <span>Budget: {displayBudgetTimeline(p.budget)}</span>
-            <span>Timeline: {displayBudgetTimeline(p.timeline)}</span>
-            <span>{timeAgo(p.createdAt)}</span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs mt-1">
+            <span className="text-slate-500">Budget: {displayBudgetTimeline(p.budget)}</span>
+            <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
+            <span className="text-slate-400">{timeAgo(p.createdAt)}</span>
           </div>
         </div>
         <div className="w-32 shrink-0">
@@ -538,6 +553,17 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
 
         <div className="flex flex-wrap items-center gap-2">
           <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as ProjectSortKey)}
+            className="text-sm rounded-lg border border-slate-300 px-3 py-2 cursor-pointer"
+          >
+            {SORT_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          <select
             value={fieldFilter}
             onChange={(e) => setFieldFilter(e.target.value)}
             className="text-sm rounded-lg border border-slate-300 px-3 py-2"
@@ -577,7 +603,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
 
       {loading ? (
         <PanelLoader label="Loading projects..." />
-      ) : projects.length === 0 ? (
+      ) : displayedProjects.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
           <p className="text-slate-600 font-medium">No projects yet</p>
           <p className="text-slate-500 text-sm mt-1 mb-6">
@@ -602,13 +628,13 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
           )}
           {view === "grid" ? (
             <div className="grid gap-4 sm:grid-cols-2 overflow-visible">
-              {projects.map((p) => (
+              {displayedProjects.map((p) => (
                 <ProjectCard key={p._id} p={p} />
               ))}
             </div>
           ) : (
             <div className="space-y-3">
-              {projects.map((p) => (
+              {displayedProjects.map((p) => (
                 <ProjectRow key={p._id} p={p} />
               ))}
             </div>
