@@ -35,7 +35,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const comment = await findProjectCommentById(commentId);
     if (!comment || comment.projectId !== id) throw new HttpError(404, "Comment not found");
-    if (comment.authorId !== user.sub && user.role !== "admin") {
+    if (comment.authorId !== user.sub) {
       throw new HttpError(403, "You can only edit your own comments");
     }
 
@@ -60,7 +60,7 @@ export async function DELETE(_req: Request, { params }: Ctx) {
 
     const comment = await findProjectCommentById(commentId);
     if (!comment || comment.projectId !== id) throw new HttpError(404, "Comment not found");
-    if (comment.authorId !== user.sub && user.role !== "admin") {
+    if (comment.authorId !== user.sub) {
       throw new HttpError(403, "You can only delete your own comments");
     }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { ProgressBar } from "@/components/ProgressBar";
 import { RequiredLabel } from "@/components/RequiredLabel";
 import { MemberAssignSelect, type MemberOption } from "@/components/projects/MemberAssignSelect";
 import type { MemberField } from "@/lib/types";
@@ -123,6 +124,7 @@ export function ProjectFormFields({
             <span className="text-slate-600 font-medium">Progress</span>
             <span className="font-semibold text-brand-700">{form.completionRate}%</span>
           </div>
+          <ProgressBar value={form.completionRate} />
           <input
             type="range"
             min={0}
@@ -130,7 +132,8 @@ export function ProjectFormFields({
             step={5}
             value={form.completionRate}
             onChange={(e) => onChange({ completionRate: Number(e.target.value) })}
-            className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-brand-600 bg-slate-200"
+            className="w-full mt-3 h-2 rounded-lg appearance-none cursor-pointer accent-brand-600"
+            style={{ background: "transparent" }}
           />
           <p className="text-xs text-slate-400 mt-1">At 100%, status becomes Completed.</p>
         </div>

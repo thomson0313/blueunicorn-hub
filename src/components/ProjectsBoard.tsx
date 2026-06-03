@@ -666,42 +666,47 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
         }}
         title="Edit project"
         xl
+        splitScroll
       >
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[400px]">
-          <form onSubmit={submitEdit} className="space-y-4">
-            <ProjectFormFields
-              form={form}
-              onChange={patchForm}
-              fields={fields}
-              members={members}
-              showAssign={isAdmin}
-              showProgress={!isAdmin}
-              error={error}
-            />
-            <div className="flex gap-3 pt-2">
-              <ActionButton
-                type="submit"
-                loading={savingEdit}
-                loadingText="Saving..."
-                disabled={!isEditDirty}
-              >
-                Save changes
-              </ActionButton>
-              <ActionButton
-                type="button"
-                variant="ghost"
-                disabled={savingEdit}
-                onClick={() => {
-                  setEditOpen(false);
-                  setEditing(null);
-                  editBaselineRef.current = null;
-                }}
-              >
-                Cancel
-              </ActionButton>
-            </div>
-          </form>
-          {editing && <ProjectCommentsPanel projectId={editing._id} />}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 lg:gap-6 h-[min(65vh,560px)] min-h-0">
+          <div className="overflow-y-auto min-h-0 pr-0 lg:pr-2 pb-4 lg:pb-0">
+            <form onSubmit={submitEdit} className="space-y-4">
+              <ProjectFormFields
+                form={form}
+                onChange={patchForm}
+                fields={fields}
+                members={members}
+                showAssign={isAdmin}
+                showProgress={!isAdmin}
+                error={error}
+              />
+              <div className="flex gap-3 pt-2 sticky bottom-0 bg-white pb-1">
+                <ActionButton
+                  type="submit"
+                  loading={savingEdit}
+                  loadingText="Saving..."
+                  disabled={!isEditDirty}
+                >
+                  Save changes
+                </ActionButton>
+                <ActionButton
+                  type="button"
+                  variant="ghost"
+                  disabled={savingEdit}
+                  onClick={() => {
+                    setEditOpen(false);
+                    setEditing(null);
+                    editBaselineRef.current = null;
+                  }}
+                >
+                  Cancel
+                </ActionButton>
+              </div>
+            </form>
+          </div>
+          <div className="overflow-y-auto min-h-0 lg:border-l lg:border-slate-200 lg:pl-6 pt-4 lg:pt-0 border-t lg:border-t-0 border-slate-200 mt-4 lg:mt-0">
+            {editing && <ProjectCommentsPanel projectId={editing._id} />}
+          </div>
         </div>
       </Modal>
     </div>

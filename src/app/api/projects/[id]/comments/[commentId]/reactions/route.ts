@@ -11,7 +11,7 @@ import { requireUser, handleError, HttpError } from "@/lib/api-guard";
 
 type Ctx = { params: Promise<{ id: string; commentId: string }> };
 
-const ALLOWED = ["👍", "❤️", "😄", "🎉", "🔥"] as const;
+const ALLOWED = ["👍", "👎", "❤️", "😄", "🎉", "🔥"] as const;
 
 const reactionSchema = z.object({
   emoji: z.enum(ALLOWED),

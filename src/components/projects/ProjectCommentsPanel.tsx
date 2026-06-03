@@ -4,10 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { ActionButton } from "@/components/ActionButton";
 import { useApp } from "@/components/AppProvider";
+import { CommentReactionPicker } from "@/components/projects/CommentReactionPicker";
 import { timeAgo } from "@/lib/time-ago";
 import type { ProjectComment } from "@/lib/types";
-
-const REACTIONS = ["👍", "❤️", "😄", "🎉", "🔥"] as const;
 
 export function ProjectCommentsPanel({ projectId }: { projectId: string }) {
   const [comments, setComments] = useState<ProjectComment[]>([]);
@@ -55,8 +54,8 @@ export function ProjectCommentsPanel({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-[320px] border-l border-slate-200 pl-6">
-      <h3 className="font-semibold text-slate-900 mb-3">Comments</h3>
+    <div className="flex flex-col h-full min-h-0">
+      <h3 className="font-semibold text-slate-900 mb-3 shrink-0">Comments</h3>
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="w-8 h-8 rounded-full border-2 border-brand-100 border-t-brand-500 animate-spin" />
@@ -116,7 +115,7 @@ function CommentNode({
   const [busy, setBusy] = useState(false);
 
   const isAuthor = user.sub === comment.author._id;
-  const canEdit = isAuthor || user.role === "admin";
+  const canEdit = isAuthor;
 
   const groupedReactions = comment.reactions.reduce(
     (acc, r) => {
@@ -215,23 +214,10 @@ function CommentNode({
             <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-wrap">{comment.body}</p>
           )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
-            {REACTIONS.map((emoji) => {
-              const g = groupedReactions[emoji];
-              return (
-                <button
-                  key={emoji}
-                  type="button"
-                  title={g?.users.join(", ")}
-                  onClick={() => void toggleReaction(emoji)}
-                  className={`text-xs px-2 py-0.5 rounded-full border cursor-pointer transition ${
-                    g?.mine ? "bg-brand-50 border-brand-300" : "border-slate-200 hover:bg-slate-50"
-                  }`}
-                >
-                  {emoji}
-                  {g?.count ? ` ${g.count}` : ""}
-                </button>
-              );
-            })}
+            <CommentReactionPicker
+              grouped={groupedReactions}
+              onPick={(emoji) => void toggleReaction(emoji)}
+            />
             <button
               type="button"
               onClick={() => setReplyOpen((v) => !v)}
