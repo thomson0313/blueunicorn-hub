@@ -71,7 +71,7 @@ export function NavBar() {
               </span>
             </span>
           </Link>
-          <button onClick={logout} className="text-sm font-medium text-brand-50 hover:text-white transition">
+          <button onClick={logout} className="text-sm font-medium text-brand-50 hover:text-white transition cursor-pointer">
             Log out
           </button>
         </div>
