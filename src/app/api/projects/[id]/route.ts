@@ -3,6 +3,7 @@ import { z } from "zod";
 import { connectDB } from "@/lib/db";
 import { findProjectById, updateProject, deleteProject, findMemberFieldById } from "@/lib/repo";
 import { applyProgressStatus } from "@/lib/project-rules";
+import { notifyProjectActivity } from "@/lib/hub-notifications";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
 
 const statusEnum = z.enum(["in_progress", "completed", "canceled", "archived"]);
@@ -73,6 +74,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
     }
 
     const updated = await updateProject(id, patch);
+    if (updated) {
+      const detail =
+        patch.status !== undefined
+          ? `Status changed to ${patch.status.replace("_", " ")}`
+          : "Project details were updated";
+      void notifyProjectActivity(id, user.sub, "project_update", detail);
+    }
     return NextResponse.json({ project: updated });
   } catch (err) {
     return handleError(err);

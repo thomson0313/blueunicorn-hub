@@ -480,6 +480,7 @@ export type ProjectListFilters = {
   ownerId?: string;
   fieldId?: string;
   status?: ProjectStatus;
+  excludeStatus?: ProjectStatus;
 };
 
 export async function listProjects(
@@ -490,6 +491,7 @@ export async function listProjects(
   if (filters.ownerId) query = query.eq("owner", filters.ownerId);
   if (filters.fieldId) query = query.eq("field_id", filters.fieldId);
   if (filters.status) query = query.eq("status", filters.status);
+  if (filters.excludeStatus) query = query.neq("status", filters.excludeStatus);
 
   const { data, error } = await query;
   dbError(error);

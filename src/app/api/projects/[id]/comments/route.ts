@@ -9,6 +9,7 @@ import {
   canAccessProjectComments,
 } from "@/lib/repo";
 import { buildCommentTree } from "@/lib/project-comments-tree";
+import { notifyProjectActivity } from "@/lib/hub-notifications";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -67,6 +68,10 @@ export async function POST(req: Request, { params }: Ctx) {
       body: parsed.data.body,
       parentId: parsed.data.parentId ?? null,
     });
+
+    const snippet =
+      parsed.data.body.length > 80 ? `${parsed.data.body.slice(0, 80)}…` : parsed.data.body;
+    void notifyProjectActivity(id, user.sub, "comment", snippet);
 
     return NextResponse.json({ comment }, { status: 201 });
   } catch (err) {

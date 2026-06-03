@@ -34,9 +34,12 @@ export async function GET(req: Request) {
       if (parsed.success) status = parsed.data;
     }
 
+    const excludeArchived = searchParams.get("excludeArchived") === "true";
+
     const filters = {
       fieldId: fieldId && fieldId !== "all" ? fieldId : undefined,
       status,
+      excludeStatus: excludeArchived && !status ? ("archived" as ProjectStatus) : undefined,
       ownerId:
         user.role === "admin"
           ? ownerIdParam && ownerIdParam !== "all"

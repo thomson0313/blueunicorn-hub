@@ -18,13 +18,13 @@ import { sortProjects, type ProjectSortKey } from "@/lib/project-sort";
 import { timeAgo } from "@/lib/time-ago";
 
 type Mode = "member" | "admin";
+type BoardVariant = "active" | "archived";
 
-const STATUS_OPTIONS: { value: ProjectStatus | "all"; label: string }[] = [
+const STATUS_OPTIONS_ACTIVE: { value: ProjectStatus | "all"; label: string }[] = [
   { value: "all", label: "All statuses" },
   { value: "in_progress", label: "In progress" },
   { value: "completed", label: "Completed" },
   { value: "canceled", label: "Canceled" },
-  { value: "archived", label: "Archived" },
 ];
 
 const SORT_OPTIONS: { value: ProjectSortKey; label: string }[] = [
@@ -55,8 +55,9 @@ function ownerId(owner: Project["owner"]): string {
   return ownerInfo(owner).id;
 }
 
-export function ProjectsBoard({ mode }: { mode: Mode }) {
+export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; variant?: BoardVariant }) {
   const isAdmin = mode === "admin";
+  const isArchivedView = variant === "archived";
   const [projects, setProjects] = useState<Project[]>([]);
   const [fields, setFields] = useState<MemberField[]>([]);
   const [members, setMembers] = useState<MemberOption[]>([]);
@@ -114,14 +115,19 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
   const loadProjects = useCallback(async () => {
     const params = new URLSearchParams();
     if (fieldFilter !== "all") params.set("fieldId", fieldFilter);
-    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (isArchivedView) {
+      params.set("status", "archived");
+    } else {
+      params.set("excludeArchived", "true");
+      if (statusFilter !== "all") params.set("status", statusFilter);
+    }
     if (isAdmin && memberFilter !== "all") params.set("ownerId", memberFilter);
 
     const res = await fetch(`/api/projects?${params.toString()}`);
     const data = await res.json();
     setProjects(data.projects || []);
     setLoading(false);
-  }, [fieldFilter, statusFilter, memberFilter, isAdmin]);
+  }, [fieldFilter, statusFilter, memberFilter, isAdmin, isArchivedView]);
 
   async function refreshProjects() {
     setRefreshing(true);
@@ -156,10 +162,16 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
     };
   }, [menuId]);
 
-  const title = isAdmin ? "All Projects" : "My Projects";
-  const subtitle = isAdmin
-    ? "View and manage projects across all members."
-    : "Track what you are working on and your completion progress.";
+  const title = isArchivedView
+    ? "Archived projects"
+    : isAdmin
+      ? "All Projects"
+      : "My Projects";
+  const subtitle = isArchivedView
+    ? "Restore archived projects to move them back to your active list."
+    : isAdmin
+      ? "View and manage projects across all members."
+      : "Track what you are working on and your completion progress.";
 
   function openCreate() {
     setForm(emptyForm());
@@ -281,6 +293,11 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
     }
   }
 
+  async function restoreProject(p: Project) {
+    const status = p.completionRate >= 100 ? "completed" : "in_progress";
+    await patchStatus(p._id, status);
+  }
+
   async function removeProject(id: string) {
     setMenuId(null);
     if (!confirm("Delete this project permanently?")) return;
@@ -339,28 +356,46 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              disabled={!!actionBusy || boardUpdating}
-              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-amber-700 cursor-pointer disabled:opacity-50"
-              onClick={(e) => {
-                e.stopPropagation();
-                void patchStatus(p._id, "canceled");
-              }}
-            >
-              {actionBusy === `${p._id}:canceled` ? "Canceling..." : "Cancel"}
-            </button>
-            <button
-              type="button"
-              disabled={!!actionBusy || boardUpdating}
-              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer disabled:opacity-50"
-              onClick={(e) => {
-                e.stopPropagation();
-                void patchStatus(p._id, "archived");
-              }}
-            >
-              {actionBusy === `${p._id}:archived` ? "Archiving..." : "Archive"}
-            </button>
+            {isArchivedView ? (
+              <button
+                type="button"
+                disabled={!!actionBusy || boardUpdating}
+                className="w-full text-left px-3 py-2 hover:bg-slate-50 text-brand-700 cursor-pointer disabled:opacity-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void restoreProject(p);
+                }}
+              >
+                {actionBusy === `${p._id}:in_progress` || actionBusy === `${p._id}:completed`
+                  ? "Restoring..."
+                  : "Restore"}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={!!actionBusy || boardUpdating}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-amber-700 cursor-pointer disabled:opacity-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void patchStatus(p._id, "canceled");
+                  }}
+                >
+                  {actionBusy === `${p._id}:canceled` ? "Canceling..." : "Cancel"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!actionBusy || boardUpdating}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer disabled:opacity-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void patchStatus(p._id, "archived");
+                  }}
+                >
+                  {actionBusy === `${p._id}:archived` ? "Archiving..." : "Archive"}
+                </button>
+              </>
+            )}
             <button
               type="button"
               disabled={!!actionBusy || boardUpdating}
@@ -490,13 +525,15 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
           <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
           <p className="text-slate-500">{subtitle}</p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 transition shrink-0 cursor-pointer"
-        >
-          Add project
-        </button>
+        {!isArchivedView && (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 transition shrink-0 cursor-pointer"
+          >
+            Add project
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -574,17 +611,19 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
               </option>
             ))}
           </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as ProjectStatus | "all")}
-            className="text-sm rounded-lg border border-slate-300 px-3 py-2"
-          >
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+          {!isArchivedView && (
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as ProjectStatus | "all")}
+              className="text-sm rounded-lg border border-slate-300 px-3 py-2"
+            >
+              {STATUS_OPTIONS_ACTIVE.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          )}
           {isAdmin && (
             <select
               value={memberFilter}
@@ -605,19 +644,25 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
         <PanelLoader label="Loading projects..." />
       ) : displayedProjects.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
-          <p className="text-slate-600 font-medium">No projects yet</p>
-          <p className="text-slate-500 text-sm mt-1 mb-6">
-            {isAdmin
-              ? "Create a project and assign it to a team member."
-              : "Add your first project to start tracking progress."}
+          <p className="text-slate-600 font-medium">
+            {isArchivedView ? "No archived projects" : "No projects yet"}
           </p>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5"
-          >
-            Add project
-          </button>
+          <p className="text-slate-500 text-sm mt-1 mb-6">
+            {isArchivedView
+              ? "Projects you archive will appear here."
+              : isAdmin
+                ? "Create a project and assign it to a team member."
+                : "Add your first project to start tracking progress."}
+          </p>
+          {!isArchivedView && (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 cursor-pointer"
+            >
+              Add project
+            </button>
+          )}
         </div>
       ) : (
         <div className="relative">

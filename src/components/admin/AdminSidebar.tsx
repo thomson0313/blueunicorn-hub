@@ -2,19 +2,18 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
-import { Avatar } from "@/components/Avatar";
 import { useApp } from "@/components/AppProvider";
 import { useAdminLayout } from "@/components/admin/AdminLayoutContext";
+import { ProfileMenu } from "@/components/ProfileMenu";
+import { NotificationPanel } from "@/components/NotificationPanel";
 import {
   IconAddons,
   IconAlerts,
   IconChat,
   IconDashboard,
-  IconLogout,
   IconMembers,
-  IconProfile,
   IconProjects,
 } from "@/components/icons/NavIcons";
 
@@ -30,24 +29,16 @@ const ADMIN_LINKS: NavItem[] = [
 const APP_LINKS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: <IconDashboard /> },
   { href: "/chat", label: "Chat", icon: <IconChat /> },
-  // { href: "/profile", label: "Profile", icon: <IconProfile /> },
 ];
 
 export function AdminSidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, avatarUrl, totalUnread } = useApp();
+  const { totalUnread } = useApp();
   const { collapsed, mobileOpen, toggleCollapsed, setMobileOpen } = useAdminLayout();
 
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname, setMobileOpen]);
-
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  }
 
   const linkClass = (href: string) => {
     const active = pathname === href || pathname.startsWith(href + "/");
@@ -138,40 +129,13 @@ export function AdminSidebar() {
           </div>
         </nav>
 
-        <div className={`px-2 py-4 border-t border-white/10 space-y-2 shrink-0 ${collapsed ? "flex flex-col items-center gap-1" : ""}`}>
-          {!collapsed ? (
-            <>
-              <Link href="/profile" className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/10">
-                <Avatar name={user.name} src={avatarUrl} size={32} />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{user.name}</p>
-                  <p className="text-[10px] text-brand-200 uppercase">{user.role}</p>
-                </div>
-              </Link>
-              <button
-                type="button"
-                onClick={logout}
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-brand-100 hover:text-white hover:bg-white/10 rounded-lg cursor-pointer"
-              >
-                <IconLogout />
-                Log out
-              </button>
-            </>
-          ) : (
-            <>
-              <Link href="/profile" title="Profile" className="p-2.5 rounded-lg hover:bg-white/10 flex items-center justify-center">
-                <IconProfile />
-              </Link>
-              <button
-                type="button"
-                onClick={logout}
-                title="Log out"
-                className="p-2.5 text-brand-100 hover:text-white hover:bg-white/10 rounded-lg cursor-pointer flex items-center justify-center"
-              >
-                <IconLogout />
-              </button>
-            </>
-          )}
+        <div
+          className={`px-2 py-4 border-t border-white/10 shrink-0 flex ${
+            collapsed ? "flex-col items-center gap-2" : "flex-col gap-2"
+          }`}
+        >
+          <NotificationPanel theme="light" placement="bottom" />
+          <ProfileMenu theme="light" showName={!collapsed} />
         </div>
       </aside>
     </>
