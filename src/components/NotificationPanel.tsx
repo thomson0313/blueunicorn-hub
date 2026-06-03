@@ -58,34 +58,16 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
     void loadList();
   }
 
-  const panelPos =
-    placement === "bottom" || isLight
+  const panelPos = isLight
+    ? "left-full ml-2 bottom-0"
+    : placement === "bottom"
       ? "right-0 bottom-full mb-2"
       : "right-0 top-full mt-2";
 
-  return (
-    <div ref={rootRef} className={`relative ${isLight ? "w-full flex justify-center" : ""}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={`relative w-10 h-10 rounded-lg flex items-center justify-center cursor-pointer transition ${
-          isLight ? "hover:bg-white/10 text-white" : "hover:bg-white/10 text-brand-50 hover:text-white"
-        }`}
-        aria-label="Notifications"
-        aria-expanded={open}
-      >
-        <IconBell size={20} />
-        {hubUnreadCount > 0 && (
-          <span className="absolute top-1 right-1 min-w-4 h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-            {hubUnreadCount > 99 ? "99+" : hubUnreadCount}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div
-          className={`absolute z-[60] w-[min(360px,calc(100vw-2rem))] max-h-[min(420px,70vh)] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl ${panelPos}`}
-        >
+  const popupEl = open ? (
+    <div
+      className={`absolute z-[60] w-[min(360px,calc(100vw-2rem))] max-h-[min(420px,70vh)] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl ${panelPos}`}
+    >
           <div className="px-4 py-3 border-b border-slate-100 shrink-0">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold text-slate-900">Notifications</h3>
@@ -142,7 +124,49 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
             )}
           </div>
         </div>
-      )}
+  ) : null;
+
+  if (isLight) {
+    return (
+      <div ref={rootRef} className="inline-flex">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="relative w-10 h-10 rounded-lg flex items-center justify-center cursor-pointer transition hover:bg-white/10 text-white"
+            aria-label="Notifications"
+            aria-expanded={open}
+          >
+            <IconBell size={20} />
+            {hubUnreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-4 h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                {hubUnreadCount > 99 ? "99+" : hubUnreadCount}
+              </span>
+            )}
+          </button>
+          {popupEl}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="relative w-10 h-10 rounded-lg flex items-center justify-center cursor-pointer transition hover:bg-white/10 text-brand-50 hover:text-white"
+        aria-label="Notifications"
+        aria-expanded={open}
+      >
+        <IconBell size={20} />
+        {hubUnreadCount > 0 && (
+          <span className="absolute top-1 right-1 min-w-4 h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+            {hubUnreadCount > 99 ? "99+" : hubUnreadCount}
+          </span>
+        )}
+      </button>
+      {popupEl}
     </div>
   );
 }

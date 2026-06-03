@@ -48,7 +48,7 @@ export function AdminSidebar() {
   };
 
   const asideClass = `
-    fixed left-0 top-0 z-50 h-full bg-gradient-to-b from-brand-800 to-brand-600 text-white flex flex-col shadow-lg transition-all duration-200
+    fixed left-0 top-0 z-50 h-full bg-gradient-to-b from-brand-800 to-brand-600 text-white flex flex-col shadow-lg transition-all duration-200 overflow-visible
     ${collapsed ? "w-[4.5rem]" : "w-56"}
     ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
     md:translate-x-0
@@ -130,7 +130,7 @@ export function AdminSidebar() {
         </nav>
 
         <div
-          className={`px-2 py-4 border-t border-white/10 shrink-0 ${
+          className={`px-2 py-4 border-t border-white/10 shrink-0 overflow-visible ${
             collapsed ? "flex flex-col items-center gap-2" : "space-y-2"
           }`}
         >
