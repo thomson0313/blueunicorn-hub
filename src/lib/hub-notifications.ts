@@ -85,6 +85,18 @@ export async function notifyProjectActivity(
   }
 }
 
+export async function listHubNotificationsSince(userId: string, since: string): Promise<HubNotification[]> {
+  const { data, error } = await getSupabase()
+    .from("hub_notifications")
+    .select("*")
+    .eq("user_id", userId)
+    .gt("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(error.message);
+  return ((data as Row[]) ?? []).map(toNotif);
+}
+
 export async function listHubNotifications(
   userId: string,
   unreadOnly = false

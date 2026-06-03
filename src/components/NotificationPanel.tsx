@@ -15,38 +15,28 @@ type Props = {
 
 export function NotificationPanel({ theme = "dark", placement = "top" }: Props) {
   const pathname = usePathname();
-  const { user } = useApp();
+  const { user, hubUnreadCount, refreshHubNotifications } = useApp();
   const [open, setOpen] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [items, setItems] = useState<HubNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const isLight = theme === "light";
 
-  const load = useCallback(async () => {
+  const loadList = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/notifications?unreadOnly=${unreadOnly}`);
       const data = await res.json();
-      if (res.ok) {
-        setItems(data.notifications || []);
-        setUnreadCount(data.unreadCount ?? 0);
-      }
+      if (res.ok) setItems(data.notifications || []);
     } finally {
       setLoading(false);
     }
   }, [unreadOnly]);
 
   useEffect(() => {
-    void load();
-    const t = setInterval(() => void load(), 30_000);
-    return () => clearInterval(t);
-  }, [load]);
-
-  useEffect(() => {
-    if (open) void load();
-  }, [open, load]);
+    if (open) void loadList();
+  }, [open, loadList]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,18 +54,17 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    void load();
+    await refreshHubNotifications();
+    void loadList();
   }
 
   const panelPos =
-    placement === "bottom"
-      ? "left-0 bottom-full mb-2"
-      : isLight
-        ? "left-0 bottom-full mb-2"
-        : "right-0 top-full mt-2";
+    placement === "bottom" || isLight
+      ? "right-0 bottom-full mb-2"
+      : "right-0 top-full mt-2";
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className={`relative ${isLight ? "w-full flex justify-center" : ""}`}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -86,16 +75,16 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
         aria-expanded={open}
       >
         <IconBell size={20} />
-        {unreadCount > 0 && (
+        {hubUnreadCount > 0 && (
           <span className="absolute top-1 right-1 min-w-4 h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-            {unreadCount > 99 ? "99+" : unreadCount}
+            {hubUnreadCount > 99 ? "99+" : hubUnreadCount}
           </span>
         )}
       </button>
 
       {open && (
         <div
-          className={`absolute z-50 w-[min(360px,calc(100vw-2rem))] max-h-[min(420px,70vh)] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl ${panelPos}`}
+          className={`absolute z-[60] w-[min(360px,calc(100vw-2rem))] max-h-[min(420px,70vh)] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl ${panelPos}`}
         >
           <div className="px-4 py-3 border-b border-slate-100 shrink-0">
             <div className="flex items-center justify-between gap-2">

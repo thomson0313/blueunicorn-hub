@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import {
   listHubNotifications,
+  listHubNotificationsSince,
   countUnreadHubNotifications,
   markHubNotificationRead,
   markAllHubNotificationsRead,
@@ -13,7 +14,17 @@ export async function GET(req: Request) {
     const user = await requireUser();
     await connectDB();
     const { searchParams } = new URL(req.url);
+    const since = searchParams.get("since");
     const unreadOnly = searchParams.get("unreadOnly") === "true";
+
+    if (since) {
+      const [newNotifications, unreadCount] = await Promise.all([
+        listHubNotificationsSince(user.sub, since),
+        countUnreadHubNotifications(user.sub),
+      ]);
+      return NextResponse.json({ newNotifications, unreadCount });
+    }
+
     const [notifications, unreadCount] = await Promise.all([
       listHubNotifications(user.sub, unreadOnly),
       countUnreadHubNotifications(user.sub),
@@ -32,7 +43,8 @@ export async function PATCH(req: Request) {
 
     if (body.markAllRead) {
       await markAllHubNotificationsRead(user.sub);
-      return NextResponse.json({ ok: true });
+      const unreadCount = await countUnreadHubNotifications(user.sub);
+      return NextResponse.json({ ok: true, unreadCount });
     }
 
     if (typeof body.id === "string") {

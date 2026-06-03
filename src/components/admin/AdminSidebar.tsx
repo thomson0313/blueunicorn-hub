@@ -130,8 +130,8 @@ export function AdminSidebar() {
         </nav>
 
         <div
-          className={`px-2 py-4 border-t border-white/10 shrink-0 flex ${
-            collapsed ? "flex-col items-center gap-2" : "flex-col gap-2"
+          className={`px-2 py-4 border-t border-white/10 shrink-0 ${
+            collapsed ? "flex flex-col items-center gap-2" : "space-y-2"
           }`}
         >
           <NotificationPanel theme="light" placement="bottom" />
