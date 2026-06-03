@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
+import { ActionButton } from "@/components/ActionButton";
+import { PanelLoader } from "@/components/PanelLoader";
 import { useApp } from "@/components/AppProvider";
 import type { Profile } from "@/lib/types";
 
@@ -13,7 +15,9 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [skills, setSkills] = useState("");
   const [bio, setBio] = useState("");
-  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -27,55 +31,63 @@ export default function ProfilePage() {
           setSkills(d.profile.skills || "");
           setBio(d.profile.bio || "");
         }
-      });
+      })
+      .finally(() => setLoading(false));
   }, []);
+
+  const isDirty =
+    !!profile &&
+    (name !== profile.name || skills !== (profile.skills || "") || bio !== (profile.bio || ""));
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (!isDirty || saving) return;
+    setSaving(true);
     setError("");
-    setStatus("Saving...");
-    const res = await fetch("/api/profile", {
+    try {
+      const res = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, skills, bio }),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      setStatus("");
-      setError(data.error || "Could not save");
-      return;
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not save");
+        return;
+      }
+      setProfile(data.profile);
+      router.refresh();
+    } finally {
+      setSaving(false);
     }
-    setProfile(data.profile);
-    setStatus("Saved");
-    router.refresh();
-    setTimeout(() => setStatus(""), 2000);
   }
 
   async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || uploading) return;
+    setUploading(true);
     setError("");
-    setStatus("Uploading photo...");
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch("/api/profile/avatar", { method: "POST", body: fd });
-    const data = await res.json();
-    if (!res.ok) {
-      setStatus("");
-      setError(data.error || "Upload failed");
-      return;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/profile/avatar", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Upload failed");
+        return;
+      }
+      setProfile(data.profile);
+      setAvatarUrl(data.profile.avatarUrl ?? null);
+      router.refresh();
+    } finally {
+      setUploading(false);
     }
-    setProfile(data.profile);
-    setAvatarUrl(data.profile.avatarUrl ?? null);
-    setStatus("Photo updated");
-    router.refresh();
-    setTimeout(() => setStatus(""), 2000);
   }
 
   const inputClass =
     "w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500";
 
-  if (!profile) return <p className="text-slate-500">Loading...</p>;
+  if (loading || !profile) return <PanelLoader label="Loading profile..." />;
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -97,10 +109,12 @@ export default function ProfilePage() {
               {profile.fieldName ? ` · ${profile.fieldName}` : ""}
             </p>
             <button
+              type="button"
               onClick={() => fileRef.current?.click()}
-              className="mt-2 text-sm font-medium text-brand-600 hover:underline"
+              disabled={uploading}
+              className="mt-2 text-sm font-medium text-brand-600 hover:underline cursor-pointer disabled:opacity-50"
             >
-              Change photo
+              {uploading ? "Uploading..." : "Change photo"}
             </button>
             <input
               ref={fileRef}
@@ -140,10 +154,9 @@ export default function ProfilePage() {
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex items-center gap-3">
-          <button className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2 transition">
+          <ActionButton type="submit" loading={saving} loadingText="Saving..." disabled={!isDirty}>
             Save changes
-          </button>
-          {status && <span className="text-sm text-slate-500">{status}</span>}
+          </ActionButton>
         </div>
       </form>
     </div>

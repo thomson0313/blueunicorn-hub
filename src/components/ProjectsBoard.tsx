@@ -5,7 +5,9 @@ import type { Project, ProjectStatus, MemberField } from "@/lib/types";
 import { ProgressBar } from "@/components/ProgressBar";
 import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
 import { Modal } from "@/components/Modal";
-import { RequiredLabel } from "@/components/RequiredLabel";
+import { ActionButton } from "@/components/ActionButton";
+import { PanelLoader } from "@/components/PanelLoader";
+import { ProjectFormFields, type ProjectFormState } from "@/components/ProjectFormFields";
 
 type Mode = "member" | "admin";
 
@@ -19,17 +21,7 @@ const STATUS_OPTIONS: { value: ProjectStatus | "all"; label: string }[] = [
   { value: "archived", label: "Archived" },
 ];
 
-type ProjectForm = {
-  title: string;
-  description: string;
-  fieldId: string;
-  budget: string;
-  timeline: string;
-  assignTo: string;
-  completionRate: number;
-};
-
-const emptyForm = (): ProjectForm => ({
+const emptyForm = (): ProjectFormState => ({
   title: "",
   description: "",
   fieldId: "",
@@ -62,9 +54,25 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
-  const [form, setForm] = useState<ProjectForm>(emptyForm());
+  const [form, setForm] = useState<ProjectFormState>(emptyForm());
+  const editBaselineRef = useRef<ProjectFormState | null>(null);
+  const [savingCreate, setSavingCreate] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const patchForm = useCallback((patch: Partial<ProjectFormState>) => {
+    setForm((f) => ({ ...f, ...patch }));
+  }, []);
+
+  const canCreate =
+    form.title.trim().length > 0 && !!form.fieldId && (!isAdmin || !!form.assignTo);
+
+  const isEditDirty = useMemo(() => {
+    if (!editOpen || !editBaselineRef.current) return false;
+    return JSON.stringify(form) !== JSON.stringify(editBaselineRef.current);
+  }, [form, editOpen]);
 
   const loadMeta = useCallback(async () => {
     const fieldRes = await fetch("/api/fields");
@@ -132,7 +140,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
 
   function openEdit(p: Project) {
     setEditing(p);
-    setForm({
+    const initial: ProjectFormState = {
       title: p.title,
       description: p.description,
       fieldId: p.fieldId || "",
@@ -140,7 +148,9 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
       timeline: p.timeline,
       assignTo: ownerId(p.owner),
       completionRate: p.completionRate,
-    });
+    };
+    setForm(initial);
+    editBaselineRef.current = initial;
     setError("");
     setEditOpen(true);
     setMenuId(null);
@@ -148,6 +158,8 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
 
   async function submitCreate(e: React.FormEvent) {
     e.preventDefault();
+    if (!canCreate || savingCreate) return;
+    setSavingCreate(true);
     setError("");
     const body: Record<string, unknown> = {
       title: form.title,
@@ -158,23 +170,28 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
     };
     if (isAdmin) body.assignTo = form.assignTo;
 
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || "Could not create project");
-      return;
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not create project");
+        return;
+      }
+      setCreateOpen(false);
+      await loadProjects();
+    } finally {
+      setSavingCreate(false);
     }
-    setCreateOpen(false);
-    await loadProjects();
   }
 
   async function submitEdit(e: React.FormEvent) {
     e.preventDefault();
-    if (!editing) return;
+    if (!editing || !isEditDirty || savingEdit) return;
+    setSavingEdit(true);
     setError("");
 
     const body: Record<string, unknown> = {
@@ -187,36 +204,50 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
     if (isAdmin) body.assignTo = form.assignTo;
     else body.completionRate = form.completionRate;
 
-    const res = await fetch(`/api/projects/${editing._id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || "Could not update project");
-      return;
+    try {
+      const res = await fetch(`/api/projects/${editing._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not update project");
+        return;
+      }
+      setEditOpen(false);
+      setEditing(null);
+      editBaselineRef.current = null;
+      await loadProjects();
+    } finally {
+      setSavingEdit(false);
     }
-    setEditOpen(false);
-    setEditing(null);
-    await loadProjects();
   }
 
   async function patchStatus(id: string, status: ProjectStatus) {
+    const key = `${id}:${status}`;
+    setActionBusy(key);
     setMenuId(null);
     const res = await fetch(`/api/projects/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    if (res.ok) await loadProjects();
+    try {
+      if (res.ok) await loadProjects();
+    } finally {
+      setActionBusy(null);
+    }
   }
 
   async function removeProject(id: string) {
     setMenuId(null);
     if (!confirm("Delete this project permanently?")) return;
+    const key = `${id}:delete`;
+    setActionBusy(key);
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     if (res.ok) await loadProjects();
+    setActionBusy(null);
   }
 
   const fieldOptions = useMemo(
@@ -228,109 +259,6 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
     () => [{ _id: "all", name: "All members" }, ...members],
     [members]
   );
-
-  const inputClass =
-    "w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500";
-
-  function ProjectFormFields({ showAssign, showProgress }: { showAssign: boolean; showProgress: boolean }) {
-    return (
-      <div className="space-y-4">
-        <div>
-          <RequiredLabel>Title</RequiredLabel>
-          <input
-            required
-            value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-          <textarea
-            value={form.description}
-            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            rows={3}
-            className={inputClass}
-            placeholder="Optional"
-          />
-        </div>
-        <div>
-          <RequiredLabel>Field</RequiredLabel>
-          <select
-            required
-            value={form.fieldId}
-            onChange={(e) => setForm((f) => ({ ...f, fieldId: e.target.value }))}
-            className={inputClass}
-          >
-            <option value="">Select a field</option>
-            {fields.map((f) => (
-              <option key={f._id} value={f._id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Budget</label>
-            <input
-              value={form.budget}
-              onChange={(e) => setForm((f) => ({ ...f, budget: e.target.value }))}
-              className={inputClass}
-              placeholder="e.g. $5,000"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Timeline</label>
-            <input
-              value={form.timeline}
-              onChange={(e) => setForm((f) => ({ ...f, timeline: e.target.value }))}
-              className={inputClass}
-              placeholder="e.g. Q2 2026"
-            />
-          </div>
-        </div>
-        {showAssign && (
-          <div>
-            <RequiredLabel>Assign to</RequiredLabel>
-            <select
-              required
-              value={form.assignTo}
-              onChange={(e) => setForm((f) => ({ ...f, assignTo: e.target.value }))}
-              className={inputClass}
-            >
-              <option value="">Select a member</option>
-              {members.map((m) => (
-                <option key={m._id} value={m._id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        {showProgress && (
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-slate-600">Progress</span>
-              <span className="font-semibold">{form.completionRate}%</span>
-            </div>
-            <ProgressBar value={form.completionRate} />
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={form.completionRate}
-              onChange={(e) => setForm((f) => ({ ...f, completionRate: Number(e.target.value) }))}
-              className="w-full mt-2 accent-brand-600"
-            />
-            <p className="text-xs text-slate-400 mt-1">At 100%, status becomes Completed.</p>
-          </div>
-        )}
-        {error && <p className="text-sm text-red-600">{error}</p>}
-      </div>
-    );
-  }
 
   function ProjectMenu({ p }: { p: Project }) {
     const open = menuId === p._id;
@@ -350,47 +278,51 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
             e.preventDefault();
             setMenuId(open ? null : p._id);
           }}
-          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer disabled:opacity-50"
           aria-label="Project actions"
           aria-expanded={open}
+          disabled={!!actionBusy}
         >
           ⋮
         </button>
         {open && (
           <div
-            className="absolute right-0 top-8 z-50 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm"
+            className="absolute right-0 top-9 z-50 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm"
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <button
               type="button"
-              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-amber-700"
+              disabled={!!actionBusy}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-amber-700 cursor-pointer disabled:opacity-50"
               onClick={(e) => {
                 e.stopPropagation();
                 void patchStatus(p._id, "canceled");
               }}
             >
-              Cancel
+              {actionBusy === `${p._id}:canceled` ? "Canceling..." : "Cancel"}
             </button>
             <button
               type="button"
-              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+              disabled={!!actionBusy}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer disabled:opacity-50"
               onClick={(e) => {
                 e.stopPropagation();
                 void patchStatus(p._id, "archived");
               }}
             >
-              Archive
+              {actionBusy === `${p._id}:archived` ? "Archiving..." : "Archive"}
             </button>
             <button
               type="button"
-              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-red-600"
+              disabled={!!actionBusy}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-red-600 cursor-pointer disabled:opacity-50"
               onClick={(e) => {
                 e.stopPropagation();
                 void removeProject(p._id);
               }}
             >
-              Delete
+              {actionBusy === `${p._id}:delete` ? "Deleting..." : "Delete"}
             </button>
           </div>
         )}
@@ -481,7 +413,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
         <button
           type="button"
           onClick={openCreate}
-          className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 transition shrink-0"
+          className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 transition shrink-0 cursor-pointer"
         >
           Add project
         </button>
@@ -556,7 +488,7 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
       </div>
 
       {loading ? (
-        <p className="text-slate-500">Loading...</p>
+        <PanelLoader label="Loading projects..." />
       ) : projects.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
           <p className="text-slate-600 font-medium">No projects yet</p>
@@ -587,37 +519,88 @@ export function ProjectsBoard({ mode }: { mode: Mode }) {
         </div>
       )}
 
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Add project" wide>
+      <Modal
+        open={createOpen}
+        onClose={() => {
+          if (!savingCreate) setCreateOpen(false);
+        }}
+        title="Add project"
+        wide
+      >
         <form onSubmit={submitCreate} className="space-y-4">
-          <ProjectFormFields showAssign={isAdmin} showProgress={false} />
+          <ProjectFormFields
+            form={form}
+            onChange={patchForm}
+            fields={fields}
+            members={members}
+            showAssign={isAdmin}
+            showProgress={false}
+            error={error}
+          />
           <div className="flex gap-3 pt-2">
-            <button type="submit" className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2">
+            <ActionButton
+              type="submit"
+              loading={savingCreate}
+              loadingText="Creating..."
+              disabled={!canCreate}
+            >
               Create project
-            </button>
-            <button type="button" onClick={() => setCreateOpen(false)} className="text-slate-600 px-4 py-2">
+            </ActionButton>
+            <ActionButton
+              type="button"
+              variant="ghost"
+              disabled={savingCreate}
+              onClick={() => setCreateOpen(false)}
+            >
               Cancel
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>
 
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit project" wide>
+      <Modal
+        open={editOpen}
+        onClose={() => {
+          if (!savingEdit) {
+            setEditOpen(false);
+            setEditing(null);
+            editBaselineRef.current = null;
+          }
+        }}
+        title="Edit project"
+        wide
+      >
         <form onSubmit={submitEdit} className="space-y-4">
-          <ProjectFormFields showAssign={isAdmin} showProgress={!isAdmin} />
+          <ProjectFormFields
+            form={form}
+            onChange={patchForm}
+            fields={fields}
+            members={members}
+            showAssign={isAdmin}
+            showProgress={!isAdmin}
+            error={error}
+          />
           <div className="flex gap-3 pt-2">
-            <button type="submit" className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2">
+            <ActionButton
+              type="submit"
+              loading={savingEdit}
+              loadingText="Saving..."
+              disabled={!isEditDirty}
+            >
               Save changes
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               type="button"
+              variant="ghost"
+              disabled={savingEdit}
               onClick={() => {
                 setEditOpen(false);
                 setEditing(null);
+                editBaselineRef.current = null;
               }}
-              className="text-slate-600 px-4 py-2"
             >
               Cancel
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>

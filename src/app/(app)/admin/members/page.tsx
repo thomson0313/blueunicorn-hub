@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PanelLoader } from "@/components/PanelLoader";
 
 type Member = {
   _id: string;
@@ -143,7 +144,7 @@ export default function AdminMembersPage() {
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
-          <p className="text-slate-500 p-5">Loading...</p>
+          <PanelLoader label="Loading members..." />
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-left">
