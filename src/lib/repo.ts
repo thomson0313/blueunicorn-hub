@@ -35,6 +35,9 @@ export interface ProjectRec {
   title: string;
   description: string;
   budget: string;
+  budgetType: "hourly" | "fixed";
+  budgetCurrency: string;
+  budgetAmount: string;
   timeline: string;
   previewLink: string;
   githubLink: string;
@@ -116,6 +119,9 @@ type ProjectRow = {
   title: string;
   description: string;
   budget: string;
+  budget_type?: string;
+  budget_currency?: string;
+  budget_amount?: string;
   timeline: string;
   preview_link?: string;
   github_link?: string;
@@ -230,6 +236,9 @@ function toProjectRec(row: ProjectRow): ProjectRec {
     title: row.title,
     description: row.description,
     budget: row.budget ?? "",
+    budgetType: row.budget_type === "hourly" ? "hourly" : "fixed",
+    budgetCurrency: row.budget_currency ?? "USD",
+    budgetAmount: row.budget_amount ?? "",
     timeline: row.timeline ?? "",
     previewLink: row.preview_link ?? "",
     githubLink: row.github_link ?? "",
@@ -556,6 +565,9 @@ export async function createProject(data: {
   title: string;
   description?: string;
   budget?: string;
+  budgetType?: "hourly" | "fixed";
+  budgetCurrency?: string;
+  budgetAmount?: string;
   timeline?: string;
   previewLink?: string;
   githubLink?: string;
@@ -570,6 +582,9 @@ export async function createProject(data: {
     title: data.title,
     description: data.description ?? "",
     budget: data.budget ?? "",
+    budget_type: data.budgetType ?? "fixed",
+    budget_currency: data.budgetCurrency ?? "USD",
+    budget_amount: data.budgetAmount ?? "",
     timeline: data.timeline ?? "",
     preview_link: data.previewLink ?? "",
     github_link: data.githubLink ?? "",
@@ -593,6 +608,9 @@ export async function updateProject(
       | "title"
       | "description"
       | "budget"
+      | "budgetType"
+      | "budgetCurrency"
+      | "budgetAmount"
       | "timeline"
       | "previewLink"
       | "githubLink"
@@ -607,6 +625,9 @@ export async function updateProject(
   if (patch.title !== undefined) payload.title = patch.title;
   if (patch.description !== undefined) payload.description = patch.description;
   if (patch.budget !== undefined) payload.budget = patch.budget;
+  if (patch.budgetType !== undefined) payload.budget_type = patch.budgetType;
+  if (patch.budgetCurrency !== undefined) payload.budget_currency = patch.budgetCurrency;
+  if (patch.budgetAmount !== undefined) payload.budget_amount = patch.budgetAmount;
   if (patch.timeline !== undefined) payload.timeline = patch.timeline;
   if (patch.previewLink !== undefined) payload.preview_link = patch.previewLink;
   if (patch.githubLink !== undefined) payload.github_link = patch.githubLink;

@@ -1,3 +1,6 @@
+import type { Project } from "@/lib/types";
+import { formatProjectBudgetDisplay } from "@/lib/project-budget";
+
 function ensureHref(url: string): string {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
@@ -52,7 +55,12 @@ export function ProjectLinkIcons({
   );
 }
 
+/** @deprecated Use displayProjectBudget(project) */
 export function displayBudgetTimeline(value: string): string {
   const v = value?.trim();
   return v ? v : "N/A";
+}
+
+export function displayProjectBudget(project: Pick<Project, "budget" | "budgetType" | "budgetCurrency" | "budgetAmount">): string {
+  return formatProjectBudgetDisplay(project);
 }

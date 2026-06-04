@@ -4,13 +4,17 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { RequiredLabel } from "@/components/RequiredLabel";
 import { timelineToInputValue } from "@/lib/project-timeline";
 import { MemberAssignSelect, type MemberOption } from "@/components/projects/MemberAssignSelect";
+import { BudgetAmountInput } from "@/components/projects/BudgetAmountInput";
+import type { BudgetType, BudgetCurrencyCode } from "@/lib/project-budget";
 import type { MemberField } from "@/lib/types";
 
 export type ProjectFormState = {
   title: string;
   description: string;
   fieldId: string;
-  budget: string;
+  budgetType: BudgetType;
+  budgetCurrency: BudgetCurrencyCode;
+  budgetAmount: string;
   timeline: string;
   previewLink: string;
   githubLink: string;
@@ -75,14 +79,39 @@ export function ProjectFormFields({
           ))}
         </select>
       </div>
+      <div>
+        <span className="block text-sm font-medium text-slate-700 mb-2">Budget type</span>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input
+              type="radio"
+              name="budgetType"
+              checked={form.budgetType === "fixed"}
+              onChange={() => onChange({ budgetType: "fixed" })}
+              className="accent-brand-600 cursor-pointer"
+            />
+            Fixed
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input
+              type="radio"
+              name="budgetType"
+              checked={form.budgetType === "hourly"}
+              onChange={() => onChange({ budgetType: "hourly" })}
+              className="accent-brand-600 cursor-pointer"
+            />
+            Hourly
+          </label>
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Budget</label>
-          <input
-            value={form.budget}
-            onChange={(e) => onChange({ budget: e.target.value })}
-            className={INPUT_CLASS}
-            placeholder="e.g. $5,000"
+          <BudgetAmountInput
+            currency={form.budgetCurrency}
+            amount={form.budgetAmount}
+            onCurrencyChange={(budgetCurrency) => onChange({ budgetCurrency })}
+            onAmountChange={(budgetAmount) => onChange({ budgetAmount })}
           />
         </div>
         <div>

@@ -40,6 +40,8 @@ export type Profile = {
 
 export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived";
 
+export type BudgetType = "hourly" | "fixed";
+
 export type Project = {
   _id: string;
   owner: PublicUser | string;
@@ -48,6 +50,9 @@ export type Project = {
   title: string;
   description: string;
   budget: string;
+  budgetType: BudgetType;
+  budgetCurrency: string;
+  budgetAmount: string;
   timeline: string;
   previewLink: string;
   githubLink: string;

@@ -5,21 +5,23 @@ import { findProjectById, updateProject, deleteProject, findMemberFieldById } fr
 import { applyProgressStatus } from "@/lib/project-rules";
 import { notifyProjectActivity } from "@/lib/hub-notifications";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
+import { budgetFieldsSchema, applyBudgetToPatch } from "@/lib/project-budget-api";
 
 const statusEnum = z.enum(["in_progress", "completed", "canceled", "archived"]);
 
-const updateSchema = z.object({
-  title: z.string().min(1).max(120).optional(),
-  description: z.string().max(2000).optional(),
-  fieldId: z.string().uuid().optional(),
-  budget: z.string().max(120).optional(),
-  timeline: z.string().max(200).optional(),
-  previewLink: z.string().max(500).optional(),
-  githubLink: z.string().max(500).optional(),
-  completionRate: z.number().min(0).max(100).optional(),
-  status: statusEnum.optional(),
-  assignTo: z.string().uuid().optional(),
-});
+const updateSchema = z
+  .object({
+    title: z.string().min(1).max(120).optional(),
+    description: z.string().max(2000).optional(),
+    fieldId: z.string().uuid().optional(),
+    timeline: z.string().max(200).optional(),
+    previewLink: z.string().max(500).optional(),
+    githubLink: z.string().max(500).optional(),
+    completionRate: z.number().min(0).max(100).optional(),
+    status: statusEnum.optional(),
+    assignTo: z.string().uuid().optional(),
+  })
+  .merge(budgetFieldsSchema);
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -47,7 +49,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const patch: Parameters<typeof updateProject>[1] = {};
     if (parsed.data.title !== undefined) patch.title = parsed.data.title;
     if (parsed.data.description !== undefined) patch.description = parsed.data.description;
-    if (parsed.data.budget !== undefined) patch.budget = parsed.data.budget;
+    applyBudgetToPatch(patch, parsed.data);
     if (parsed.data.timeline !== undefined) patch.timeline = parsed.data.timeline;
     if (parsed.data.previewLink !== undefined) patch.previewLink = parsed.data.previewLink;
     if (parsed.data.githubLink !== undefined) patch.githubLink = parsed.data.githubLink;

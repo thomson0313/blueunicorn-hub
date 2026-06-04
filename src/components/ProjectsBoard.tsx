@@ -10,7 +10,8 @@ import { ActionButton } from "@/components/ActionButton";
 import { PanelLoader } from "@/components/PanelLoader";
 import { ProjectFormFields, type ProjectFormState } from "@/components/ProjectFormFields";
 import { ProjectCommentsPanel } from "@/components/projects/ProjectCommentsPanel";
-import { ProjectLinkIcons, displayBudgetTimeline } from "@/components/projects/ProjectLinkIcons";
+import { ProjectLinkIcons, displayProjectBudget } from "@/components/projects/ProjectLinkIcons";
+import { budgetFieldsFromProject } from "@/lib/project-budget";
 import { ProjectTimelineDisplay } from "@/components/projects/ProjectTimelineDisplay";
 import type { MemberOption } from "@/components/projects/MemberAssignSelect";
 import { isProjectUrgent } from "@/lib/project-timeline";
@@ -38,13 +39,23 @@ const emptyForm = (): ProjectFormState => ({
   title: "",
   description: "",
   fieldId: "",
-  budget: "",
+  budgetType: "fixed",
+  budgetCurrency: "USD",
+  budgetAmount: "",
   timeline: "",
   previewLink: "",
   githubLink: "",
   assignTo: "",
   completionRate: 0,
 });
+
+function budgetPayload(form: ProjectFormState) {
+  return {
+    budgetType: form.budgetType,
+    budgetCurrency: form.budgetCurrency,
+    budgetAmount: form.budgetAmount,
+  };
+}
 
 function ownerInfo(owner: Project["owner"]) {
   if (typeof owner === "string") return { id: owner, name: "Member", avatarUrl: null as string | null };
@@ -181,11 +192,12 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
 
   function openEdit(p: Project) {
     setEditing(p);
+    const budget = budgetFieldsFromProject(p);
     const initial: ProjectFormState = {
       title: p.title,
       description: p.description,
       fieldId: p.fieldId || "",
-      budget: p.budget,
+      ...budget,
       timeline: p.timeline,
       previewLink: p.previewLink || "",
       githubLink: p.githubLink || "",
@@ -208,7 +220,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       title: form.title,
       description: form.description,
       fieldId: form.fieldId,
-      budget: form.budget,
+      ...budgetPayload(form),
       timeline: form.timeline,
       previewLink: form.previewLink,
       githubLink: form.githubLink,
@@ -245,7 +257,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       title: form.title,
       description: form.description,
       fieldId: form.fieldId,
-      budget: form.budget,
+      ...budgetPayload(form),
       timeline: form.timeline,
       previewLink: form.previewLink,
       githubLink: form.githubLink,
@@ -457,7 +469,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         </div>
         {p.description && <p className="text-sm text-slate-500 mt-2 line-clamp-2">{p.description}</p>}
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          <span className="text-slate-500">Budget: {displayBudgetTimeline(p.budget)}</span>
+          <span className="text-slate-500">Budget: {displayProjectBudget(p)}</span>
           <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
         </div>
         <div className="mt-4">
@@ -504,7 +516,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
             </div>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs mt-1">
-            <span className="text-slate-500">Budget: {displayBudgetTimeline(p.budget)}</span>
+            <span className="text-slate-500">Budget: {displayProjectBudget(p)}</span>
             <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
             <span className="text-slate-400">{timeAgo(p.createdAt)}</span>
           </div>

@@ -4,19 +4,22 @@ import { connectDB } from "@/lib/db";
 import { listProjects, createProject, findMemberFieldById } from "@/lib/repo";
 import type { ProjectStatus } from "@/lib/repo";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
+import { budgetFieldsSchema, applyBudgetToPatch } from "@/lib/project-budget-api";
+import { buildBudgetPatch } from "@/lib/project-budget";
 
 const statusEnum = z.enum(["in_progress", "completed", "canceled", "archived"]);
 
-const createSchema = z.object({
-  title: z.string().min(1, "Title is required").max(120),
-  description: z.string().max(2000).optional().default(""),
-  fieldId: z.string().uuid("Please select a field"),
-  budget: z.string().max(120).optional().default(""),
-  timeline: z.string().max(200).optional().default(""),
-  previewLink: z.string().max(500).optional().default(""),
-  githubLink: z.string().max(500).optional().default(""),
-  assignTo: z.string().uuid().optional(),
-});
+const createSchema = z
+  .object({
+    title: z.string().min(1, "Title is required").max(120),
+    description: z.string().max(2000).optional().default(""),
+    fieldId: z.string().uuid("Please select a field"),
+    timeline: z.string().max(200).optional().default(""),
+    previewLink: z.string().max(500).optional().default(""),
+    githubLink: z.string().max(500).optional().default(""),
+    assignTo: z.string().uuid().optional(),
+  })
+  .merge(budgetFieldsSchema);
 
 export async function GET(req: Request) {
   try {
@@ -76,12 +79,21 @@ export async function POST(req: Request) {
       ownerId = parsed.data.assignTo;
     }
 
+    const budget = buildBudgetPatch({
+      budgetType: parsed.data.budgetType,
+      budgetCurrency: parsed.data.budgetCurrency,
+      budgetAmount: parsed.data.budgetAmount,
+    });
+
     const project = await createProject({
       owner: ownerId,
       fieldId: parsed.data.fieldId,
       title: parsed.data.title,
       description: parsed.data.description,
-      budget: parsed.data.budget,
+      budget: budget.budget,
+      budgetType: budget.budgetType,
+      budgetCurrency: budget.budgetCurrency,
+      budgetAmount: budget.budgetAmount,
       timeline: parsed.data.timeline,
       previewLink: parsed.data.previewLink || "",
       githubLink: parsed.data.githubLink || "",
