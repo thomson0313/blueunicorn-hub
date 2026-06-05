@@ -672,6 +672,10 @@ export function canManageProject(userId: string, role: Role, ownerId: string): b
   return role === "admin" || ownerId === userId;
 }
 
+export function canTrackProjectTime(userId: string, ownerId: string): boolean {
+  return ownerId === userId;
+}
+
 /* ------------------------ Project time logs ------------------------ */
 
 export interface ProjectTimeLogRec {
@@ -747,12 +751,31 @@ export async function aggregateTimeByDateForProjects(
   return result;
 }
 
+export async function findProjectTimeLogByDate(
+  projectId: string,
+  workDate: string
+): Promise<ProjectTimeLogRec | null> {
+  const { data, error } = await getSupabase()
+    .from("project_time_logs")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("work_date", workDate)
+    .maybeSingle();
+  dbError(error);
+  return data ? toProjectTimeLogRec(data as ProjectTimeLogRow) : null;
+}
+
 export async function createProjectTimeLog(data: {
   projectId: string;
   userId: string;
   workDate: string;
   hours: number;
 }): Promise<ProjectTimeLogRec> {
+  const existing = await findProjectTimeLogByDate(data.projectId, data.workDate);
+  if (existing) {
+    throw new Error("Time already logged for this date. Use edit instead.");
+  }
+
   const ts = nowISO();
   const row = {
     id: newId(),
@@ -770,6 +793,37 @@ export async function createProjectTimeLog(data: {
     .single();
   dbError(error);
   return toProjectTimeLogRec(created as ProjectTimeLogRow);
+}
+
+export async function updateProjectTimeLogByDate(
+  projectId: string,
+  workDate: string,
+  hours: number
+): Promise<ProjectTimeLogRec | null> {
+  const { data, error } = await getSupabase()
+    .from("project_time_logs")
+    .update({ hours, updated_at: nowISO() })
+    .eq("project_id", projectId)
+    .eq("work_date", workDate)
+    .select()
+    .maybeSingle();
+  dbError(error);
+  return data ? toProjectTimeLogRec(data as ProjectTimeLogRow) : null;
+}
+
+export async function deleteProjectTimeLogByDate(
+  projectId: string,
+  workDate: string
+): Promise<boolean> {
+  const { data, error } = await getSupabase()
+    .from("project_time_logs")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("work_date", workDate)
+    .select("id")
+    .maybeSingle();
+  dbError(error);
+  return !!data;
 }
 
 export type EnrichedProjectComment = ProjectCommentRec & {

@@ -19,6 +19,7 @@ import type { MemberOption } from "@/components/projects/MemberAssignSelect";
 import { isProjectUrgent } from "@/lib/project-timeline";
 import { sortProjects, type ProjectSortKey } from "@/lib/project-sort";
 import { timeAgo } from "@/lib/time-ago";
+import { useApp } from "@/components/AppProvider";
 
 type Mode = "member" | "admin";
 type BoardVariant = "active" | "archived";
@@ -69,6 +70,7 @@ function ownerId(owner: Project["owner"]): string {
 }
 
 export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; variant?: BoardVariant }) {
+  const { user } = useApp();
   const isAdmin = mode === "admin";
   const isArchivedView = variant === "archived";
   const [projects, setProjects] = useState<Project[]>([]);
@@ -474,14 +476,20 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           <span className="text-slate-500">Budget: {displayProjectBudget(p)}</span>
           <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
         </div>
-        {p.budgetType === "hourly" ? (
-          <div className="mt-4">
+        {p.budgetType === "hourly" && !isAdmin ? (
+          <div className="mt-4 w-full">
             <div className="flex justify-between text-sm mb-2">
               <span className="text-slate-600">Time logged</span>
               <span className="font-semibold">{formatHours(p.totalLoggedHours ?? 0)} hr</span>
             </div>
-            <ProjectTimeHeatmap hoursByDate={p.timeByDate ?? {}} compact />
+            <ProjectTimeHeatmap
+              hoursByDate={p.timeByDate ?? {}}
+              projectCreatedAt={p.createdAt}
+              compact
+            />
           </div>
+        ) : p.budgetType === "hourly" && isAdmin ? (
+          <p className="mt-4 text-sm text-slate-500">{formatHours(p.totalLoggedHours ?? 0)} hr logged</p>
         ) : (
           <div className="mt-4">
             <div className="flex justify-between text-sm mb-1">
@@ -505,7 +513,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         tabIndex={0}
         onClick={(e) => handleCardActivate(e, p)}
         onKeyDown={(e) => e.key === "Enter" && openEdit(p)}
-        className={`bg-white rounded-xl border p-4 transition cursor-pointer flex items-center gap-4 relative ${
+        className={`bg-white rounded-xl border p-4 transition cursor-pointer flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 relative ${
           urgent ? "border-red-400 hover:border-red-500" : "border-slate-200 hover:border-brand-300"
         } ${busy ? "opacity-60 pointer-events-none" : ""}`}
       >
@@ -533,22 +541,32 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
             <span className="text-slate-400">{timeAgo(p.createdAt)}</span>
           </div>
         </div>
-        <div className="w-40 shrink-0">
-          {p.budgetType === "hourly" ? (
-            <>
-              <ProjectTimeHeatmap hoursByDate={p.timeByDate ?? {}} compact />
-              <p className="text-xs text-right text-slate-500 mt-1">
+        <div className="w-full sm:w-auto sm:max-w-[min(100%,18rem)] shrink-0 self-start order-3 sm:order-none">
+          {p.budgetType === "hourly" && !isAdmin ? (
+            <div className="w-full">
+              <ProjectTimeHeatmap
+                hoursByDate={p.timeByDate ?? {}}
+                projectCreatedAt={p.createdAt}
+                compact
+              />
+              <p className="text-xs text-left text-slate-500 mt-1">
                 {formatHours(p.totalLoggedHours ?? 0)} hr
               </p>
-            </>
+            </div>
+          ) : p.budgetType === "hourly" && isAdmin ? (
+            <p className="text-xs text-left sm:text-right text-slate-500">
+              {formatHours(p.totalLoggedHours ?? 0)} hr logged
+            </p>
           ) : (
             <>
               <ProgressBar value={p.completionRate} />
-              <p className="text-xs text-right text-slate-500 mt-1">{p.completionRate}%</p>
+              <p className="text-xs text-left sm:text-right text-slate-500 mt-1">{p.completionRate}%</p>
             </>
           )}
         </div>
-        <ProjectMenu p={p} />
+        <div className="self-end sm:self-center shrink-0 order-2 sm:order-none ml-auto sm:ml-0">
+          <ProjectMenu p={p} />
+        </div>
       </article>
     );
   }
@@ -785,7 +803,11 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
                 showAssign={isAdmin}
                 showProgress={!isAdmin && form.budgetType === "fixed"}
                 projectId={editing?._id}
+                projectCreatedAt={editing?.createdAt}
                 savedBudgetType={editing?.budgetType}
+                canTrackTime={
+                  !!editing && !isAdmin && ownerId(editing.owner) === user.sub
+                }
                 onTimeLogged={() => void loadProjects()}
                 error={error}
               />

@@ -34,7 +34,9 @@ export function ProjectFormFields({
   showAssign,
   showProgress,
   projectId,
+  projectCreatedAt,
   savedBudgetType,
+  canTrackTime,
   onTimeLogged,
   error,
 }: {
@@ -45,7 +47,9 @@ export function ProjectFormFields({
   showAssign: boolean;
   showProgress: boolean;
   projectId?: string;
+  projectCreatedAt?: string;
   savedBudgetType?: BudgetType;
+  canTrackTime?: boolean;
   onTimeLogged?: () => void;
   error?: string;
 }) {
@@ -155,8 +159,12 @@ export function ProjectFormFields({
           <MemberAssignSelect value={form.assignTo} members={members} onChange={(id) => onChange({ assignTo: id })} />
         </div>
       )}
-      {projectId && savedBudgetType === "hourly" ? (
-        <ProjectTimeTracker projectId={projectId} onUpdated={onTimeLogged} />
+      {projectId && savedBudgetType === "hourly" && canTrackTime && projectCreatedAt ? (
+        <ProjectTimeTracker
+          projectId={projectId}
+          projectCreatedAt={projectCreatedAt}
+          onUpdated={onTimeLogged}
+        />
       ) : projectId && form.budgetType === "hourly" && savedBudgetType === "fixed" ? (
         <p className="text-sm text-slate-500">Save changes to switch this project to hourly time tracking.</p>
       ) : (

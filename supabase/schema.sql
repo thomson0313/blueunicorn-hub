@@ -66,6 +66,7 @@ create table if not exists project_time_logs (
 
 create index if not exists project_time_logs_project_idx on project_time_logs(project_id);
 create index if not exists project_time_logs_project_date_idx on project_time_logs(project_id, work_date);
+create unique index if not exists project_time_logs_project_date_uidx on project_time_logs(project_id, work_date);
 
 create table if not exists project_comments (
   id uuid primary key default gen_random_uuid(),
