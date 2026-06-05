@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { connectDB } from "@/lib/db";
-import { listUsers, createUser, emailOrUsernameTaken, projectCountsByOwner } from "@/lib/repo";
+import { listUsers, createUser, emailOrUsernameTaken, projectCountsByOwner, publicUser } from "@/lib/repo";
 import { requireAdmin, handleError } from "@/lib/api-guard";
 import { hashPassword } from "@/lib/auth";
 
@@ -12,16 +12,24 @@ export async function GET() {
     await connectDB();
 
     const counts = await projectCountsByOwner();
-    const members = (await listUsers()).map((u) => ({
-      _id: u._id,
-      name: u.name,
-      email: u.email,
-      username: u.username ?? null,
-      role: u.role,
-      avatarUrl: u.avatarUrl ?? null,
-      createdAt: u.createdAt,
-      projectCount: counts.get(u._id) || 0,
-    }));
+    const users = await listUsers();
+    const members = await Promise.all(
+      users.map(async (u) => {
+        const pub = await publicUser(u);
+        return {
+          _id: u._id,
+          name: u.name,
+          email: u.email,
+          username: u.username ?? null,
+          role: u.role,
+          avatarUrl: u.avatarUrl ?? null,
+          fieldId: pub.fieldId,
+          fieldName: pub.fieldName,
+          createdAt: u.createdAt,
+          projectCount: counts.get(u._id) || 0,
+        };
+      })
+    );
 
     return NextResponse.json({ members });
   } catch (err) {

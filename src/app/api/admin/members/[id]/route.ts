@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { connectDB } from "@/lib/db";
-import { findUserById, updateUser, deleteUser } from "@/lib/repo";
+import { findUserById, updateUser, deleteUser, findMemberFieldById, publicUser } from "@/lib/repo";
 import { requireAdmin, handleError, HttpError } from "@/lib/api-guard";
 import { hashPassword } from "@/lib/auth";
 
@@ -10,6 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
 const updateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   role: z.enum(["admin", "member"]).optional(),
+  fieldId: z.string().uuid().nullable().optional(),
   password: z.string().min(6, "Password must be at least 6 characters").optional(),
 });
 
@@ -33,20 +34,32 @@ export async function PATCH(req: Request, { params }: Ctx) {
       throw new HttpError(400, "You cannot remove your own admin role");
     }
 
+    if (parsed.data.fieldId) {
+      const field = await findMemberFieldById(parsed.data.fieldId);
+      if (!field) throw new HttpError(400, "Invalid field");
+    }
+
     const updated = await updateUser(id, {
       name: parsed.data.name,
       role: parsed.data.role,
+      fieldId: parsed.data.fieldId,
       passwordHash: parsed.data.password ? await hashPassword(parsed.data.password) : undefined,
     });
 
+    const pub = updated ? await publicUser(updated) : null;
+
     return NextResponse.json({
-      member: {
-        _id: updated!._id,
-        name: updated!.name,
-        email: updated!.email,
-        username: updated!.username ?? null,
-        role: updated!.role,
-      },
+      member: pub
+        ? {
+            _id: pub._id,
+            name: pub.name,
+            email: pub.email,
+            username: pub.username ?? null,
+            role: pub.role,
+            fieldId: pub.fieldId,
+            fieldName: pub.fieldName,
+          }
+        : null,
     });
   } catch (err) {
     return handleError(err);
