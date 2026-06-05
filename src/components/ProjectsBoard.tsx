@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Project, ProjectStatus, MemberField } from "@/lib/types";
+import type { Project, ProjectStatus, MemberField, BudgetType } from "@/lib/types";
 import { Avatar } from "@/components/Avatar";
 import { ProgressBar } from "@/components/ProgressBar";
 import { ProjectStatusBadge } from "@/components/ProjectStatusBadge";
@@ -36,6 +36,12 @@ const SORT_OPTIONS: { value: ProjectSortKey; label: string }[] = [
   { value: "budget", label: "Sort: Budget" },
   { value: "timeline", label: "Sort: Timeline" },
   { value: "progress", label: "Sort: Progress" },
+];
+
+const BUDGET_TYPE_OPTIONS: { value: BudgetType | "all"; label: string }[] = [
+  { value: "all", label: "All budget types" },
+  { value: "fixed", label: "Fixed" },
+  { value: "hourly", label: "Hourly" },
 ];
 
 const emptyForm = (): ProjectFormState => ({
@@ -81,6 +87,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
   const [fieldFilter, setFieldFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
   const [memberFilter, setMemberFilter] = useState("all");
+  const [budgetTypeFilter, setBudgetTypeFilter] = useState<BudgetType | "all">("all");
   const [sortBy, setSortBy] = useState<ProjectSortKey>("default");
   const [error, setError] = useState("");
 
@@ -339,7 +346,13 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
     [members]
   );
 
-  const displayedProjects = useMemo(() => sortProjects(projects, sortBy), [projects, sortBy]);
+  const displayedProjects = useMemo(() => {
+    const filtered =
+      budgetTypeFilter === "all"
+        ? projects
+        : projects.filter((p) => p.budgetType === budgetTypeFilter);
+    return sortProjects(filtered, sortBy);
+  }, [projects, sortBy, budgetTypeFilter]);
 
   function ProjectMenu({ p }: { p: Project }) {
     const open = menuId === p._id;
@@ -368,7 +381,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         </button>
         {open && (
           <div
-            className="absolute right-0 top-9 z-50 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm"
+            className="absolute right-0 top-9 z-50 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm"
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -388,6 +401,32 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
               </button>
             ) : (
               <>
+                {p.budgetType === "hourly" && p.status === "in_progress" && (
+                  <button
+                    type="button"
+                    disabled={!!actionBusy || boardUpdating}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 text-emerald-700 cursor-pointer disabled:opacity-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void patchStatus(p._id, "completed");
+                    }}
+                  >
+                    {actionBusy === `${p._id}:completed` ? "Updating..." : "Mark complete"}
+                  </button>
+                )}
+                {p.budgetType === "hourly" && p.status === "completed" && (
+                  <button
+                    type="button"
+                    disabled={!!actionBusy || boardUpdating}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 text-brand-700 cursor-pointer disabled:opacity-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void patchStatus(p._id, "in_progress");
+                    }}
+                  >
+                    {actionBusy === `${p._id}:in_progress` ? "Updating..." : "Mark in progress"}
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={!!actionBusy || boardUpdating}
@@ -655,6 +694,17 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
             {fieldOptions.map((f) => (
               <option key={f._id} value={f._id}>
                 {f.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={budgetTypeFilter}
+            onChange={(e) => setBudgetTypeFilter(e.target.value as BudgetType | "all")}
+            className="text-sm rounded-lg border border-slate-300 px-3 py-2 cursor-pointer"
+          >
+            {BUDGET_TYPE_OPTIONS.map((b) => (
+              <option key={b.value} value={b.value}>
+                {b.label}
               </option>
             ))}
           </select>
