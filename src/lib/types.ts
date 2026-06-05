@@ -42,6 +42,15 @@ export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived
 
 export type BudgetType = "hourly" | "fixed";
 
+export type ProjectTimeLog = {
+  _id: string;
+  projectId: string;
+  userId: string;
+  workDate: string;
+  hours: number;
+  createdAt: string;
+};
+
 export type Project = {
   _id: string;
   owner: PublicUser | string;
@@ -58,6 +67,8 @@ export type Project = {
   githubLink: string;
   completionRate: number;
   status: ProjectStatus;
+  timeByDate?: Record<string, number>;
+  totalLoggedHours?: number;
   createdAt: string;
   updatedAt: string;
 };

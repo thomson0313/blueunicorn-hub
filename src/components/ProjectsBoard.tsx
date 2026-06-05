@@ -11,6 +11,8 @@ import { PanelLoader } from "@/components/PanelLoader";
 import { ProjectFormFields, type ProjectFormState } from "@/components/ProjectFormFields";
 import { ProjectCommentsPanel } from "@/components/projects/ProjectCommentsPanel";
 import { ProjectLinkIcons, displayProjectBudget } from "@/components/projects/ProjectLinkIcons";
+import { ProjectTimeHeatmap } from "@/components/projects/ProjectTimeHeatmap";
+import { formatHours } from "@/lib/project-time-heatmap";
 import { budgetFieldsFromProject } from "@/lib/project-budget";
 import { ProjectTimelineDisplay } from "@/components/projects/ProjectTimelineDisplay";
 import type { MemberOption } from "@/components/projects/MemberAssignSelect";
@@ -263,7 +265,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       githubLink: form.githubLink,
     };
     if (isAdmin) body.assignTo = form.assignTo;
-    else body.completionRate = form.completionRate;
+    else if (form.budgetType === "fixed") body.completionRate = form.completionRate;
 
     setBoardUpdating(true);
     try {
@@ -472,13 +474,23 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           <span className="text-slate-500">Budget: {displayProjectBudget(p)}</span>
           <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
         </div>
-        <div className="mt-4">
-          <div className="flex justify-between text-sm mb-1">
-            <span className="text-slate-600">Progress</span>
-            <span className="font-semibold">{p.completionRate}%</span>
+        {p.budgetType === "hourly" ? (
+          <div className="mt-4">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-slate-600">Time logged</span>
+              <span className="font-semibold">{formatHours(p.totalLoggedHours ?? 0)} hr</span>
+            </div>
+            <ProjectTimeHeatmap hoursByDate={p.timeByDate ?? {}} compact />
           </div>
-          <ProgressBar value={p.completionRate} />
-        </div>
+        ) : (
+          <div className="mt-4">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-slate-600">Progress</span>
+              <span className="font-semibold">{p.completionRate}%</span>
+            </div>
+            <ProgressBar value={p.completionRate} />
+          </div>
+        )}
       </article>
     );
   }
@@ -521,9 +533,20 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
             <span className="text-slate-400">{timeAgo(p.createdAt)}</span>
           </div>
         </div>
-        <div className="w-32 shrink-0">
-          <ProgressBar value={p.completionRate} />
-          <p className="text-xs text-right text-slate-500 mt-1">{p.completionRate}%</p>
+        <div className="w-40 shrink-0">
+          {p.budgetType === "hourly" ? (
+            <>
+              <ProjectTimeHeatmap hoursByDate={p.timeByDate ?? {}} compact />
+              <p className="text-xs text-right text-slate-500 mt-1">
+                {formatHours(p.totalLoggedHours ?? 0)} hr
+              </p>
+            </>
+          ) : (
+            <>
+              <ProgressBar value={p.completionRate} />
+              <p className="text-xs text-right text-slate-500 mt-1">{p.completionRate}%</p>
+            </>
+          )}
         </div>
         <ProjectMenu p={p} />
       </article>
@@ -760,7 +783,10 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
                 fields={fields}
                 members={members}
                 showAssign={isAdmin}
-                showProgress={!isAdmin}
+                showProgress={!isAdmin && form.budgetType === "fixed"}
+                projectId={editing?._id}
+                savedBudgetType={editing?.budgetType}
+                onTimeLogged={() => void loadProjects()}
                 error={error}
               />
               <div className="flex gap-3 pt-2 sticky bottom-0 bg-white pb-1">

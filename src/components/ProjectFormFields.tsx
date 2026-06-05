@@ -5,6 +5,7 @@ import { RequiredLabel } from "@/components/RequiredLabel";
 import { timelineToInputValue } from "@/lib/project-timeline";
 import { MemberAssignSelect, type MemberOption } from "@/components/projects/MemberAssignSelect";
 import { BudgetAmountInput } from "@/components/projects/BudgetAmountInput";
+import { ProjectTimeTracker } from "@/components/projects/ProjectTimeTracker";
 import type { BudgetType, BudgetCurrencyCode } from "@/lib/project-budget";
 import type { MemberField } from "@/lib/types";
 
@@ -32,6 +33,9 @@ export function ProjectFormFields({
   members,
   showAssign,
   showProgress,
+  projectId,
+  savedBudgetType,
+  onTimeLogged,
   error,
 }: {
   form: ProjectFormState;
@@ -40,6 +44,9 @@ export function ProjectFormFields({
   members: MemberOption[];
   showAssign: boolean;
   showProgress: boolean;
+  projectId?: string;
+  savedBudgetType?: BudgetType;
+  onTimeLogged?: () => void;
   error?: string;
 }) {
   return (
@@ -148,25 +155,31 @@ export function ProjectFormFields({
           <MemberAssignSelect value={form.assignTo} members={members} onChange={(id) => onChange({ assignTo: id })} />
         </div>
       )}
-      {showProgress && (
-        <div>
-          <div className="flex justify-between text-sm mb-2">
-            <span className="text-slate-600 font-medium">Progress</span>
-            <span className="font-semibold text-brand-700">{form.completionRate}%</span>
+      {projectId && savedBudgetType === "hourly" ? (
+        <ProjectTimeTracker projectId={projectId} onUpdated={onTimeLogged} />
+      ) : projectId && form.budgetType === "hourly" && savedBudgetType === "fixed" ? (
+        <p className="text-sm text-slate-500">Save changes to switch this project to hourly time tracking.</p>
+      ) : (
+        showProgress && (
+          <div>
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-slate-600 font-medium">Progress</span>
+              <span className="font-semibold text-brand-700">{form.completionRate}%</span>
+            </div>
+            <ProgressBar value={form.completionRate} />
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={form.completionRate}
+              onChange={(e) => onChange({ completionRate: Number(e.target.value) })}
+              className="w-full mt-3 h-2 rounded-lg appearance-none cursor-pointer accent-brand-600"
+              style={{ background: "transparent" }}
+            />
+            <p className="text-xs text-slate-400 mt-1">At 100%, status becomes Completed.</p>
           </div>
-          <ProgressBar value={form.completionRate} />
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={5}
-            value={form.completionRate}
-            onChange={(e) => onChange({ completionRate: Number(e.target.value) })}
-            className="w-full mt-3 h-2 rounded-lg appearance-none cursor-pointer accent-brand-600"
-            style={{ background: "transparent" }}
-          />
-          <p className="text-xs text-slate-400 mt-1">At 100%, status becomes Completed.</p>
-        </div>
+        )
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>

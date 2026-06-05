@@ -494,9 +494,16 @@ export async function deleteUser(id: string): Promise<boolean> {
 export type EnrichedProject = Omit<ProjectRec, "owner"> & {
   owner: PublicUser | string;
   fieldName: string | null;
+  timeByDate?: Record<string, number>;
+  totalLoggedHours?: number;
 };
 
-async function enrichProject(p: ProjectRec, users?: UserRec[]): Promise<EnrichedProject> {
+async function enrichProject(
+  p: ProjectRec,
+  users?: UserRec[],
+  timeByDate?: Record<string, number>,
+  totalLoggedHours?: number
+): Promise<EnrichedProject> {
   const ownerUser =
     users?.find((u) => u._id === p.owner) ?? (await findUserById(p.owner));
   const fieldName = await getFieldName(p.fieldId);
@@ -504,6 +511,8 @@ async function enrichProject(p: ProjectRec, users?: UserRec[]): Promise<Enriched
     ...p,
     owner: ownerUser ? await publicUser(ownerUser) : p.owner,
     fieldName,
+    timeByDate,
+    totalLoggedHours,
   };
 }
 
@@ -531,7 +540,17 @@ export async function listProjects(
     return projects.map((p) => ({ ...p, owner: p.owner, fieldName: null }));
   }
   const users = await listUsers();
-  return Promise.all(projects.map((p) => enrichProject(p, users)));
+  const hourlyIds = projects.filter((p) => p.budgetType === "hourly").map((p) => p._id);
+  const timeAgg = await aggregateTimeByDateForProjects(hourlyIds);
+  return Promise.all(
+    projects.map((p) => {
+      const timeByDate = p.budgetType === "hourly" ? timeAgg.get(p._id) : undefined;
+      const totalLoggedHours = timeByDate
+        ? Object.values(timeByDate).reduce((sum, h) => sum + h, 0)
+        : undefined;
+      return enrichProject(p, users, timeByDate, totalLoggedHours);
+    })
+  );
 }
 
 export async function listProjectsByOwner(owner: string, populate = true): Promise<EnrichedProject[]> {
@@ -647,6 +666,110 @@ export async function deleteProject(id: string): Promise<boolean> {
 
 export function canAccessProjectComments(userId: string, role: Role, ownerId: string): boolean {
   return role === "admin" || ownerId === userId;
+}
+
+export function canManageProject(userId: string, role: Role, ownerId: string): boolean {
+  return role === "admin" || ownerId === userId;
+}
+
+/* ------------------------ Project time logs ------------------------ */
+
+export interface ProjectTimeLogRec {
+  _id: string;
+  projectId: string;
+  userId: string;
+  workDate: string;
+  hours: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type ProjectTimeLogRow = {
+  id: string;
+  project_id: string;
+  user_id: string;
+  work_date: string;
+  hours: number;
+  created_at: string;
+  updated_at: string;
+};
+
+function toProjectTimeLogRec(row: ProjectTimeLogRow): ProjectTimeLogRec {
+  return {
+    _id: row.id,
+    projectId: row.project_id,
+    userId: row.user_id,
+    workDate: row.work_date,
+    hours: Number(row.hours),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listProjectTimeLogs(projectId: string): Promise<ProjectTimeLogRec[]> {
+  const { data, error } = await getSupabase()
+    .from("project_time_logs")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("work_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  dbError(error);
+  return (data as ProjectTimeLogRow[]).map(toProjectTimeLogRec);
+}
+
+export function aggregateHoursByDate(logs: ProjectTimeLogRec[]): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const log of logs) {
+    map[log.workDate] = (map[log.workDate] ?? 0) + log.hours;
+  }
+  return map;
+}
+
+export async function aggregateTimeByDateForProjects(
+  projectIds: string[]
+): Promise<Map<string, Record<string, number>>> {
+  const result = new Map<string, Record<string, number>>();
+  if (!projectIds.length) return result;
+
+  const { data, error } = await getSupabase()
+    .from("project_time_logs")
+    .select("project_id, work_date, hours")
+    .in("project_id", projectIds);
+  dbError(error);
+
+  for (const row of data ?? []) {
+    const r = row as { project_id: string; work_date: string; hours: number };
+    const pid = r.project_id;
+    const byDate = result.get(pid) ?? {};
+    byDate[r.work_date] = (byDate[r.work_date] ?? 0) + Number(r.hours);
+    result.set(pid, byDate);
+  }
+  return result;
+}
+
+export async function createProjectTimeLog(data: {
+  projectId: string;
+  userId: string;
+  workDate: string;
+  hours: number;
+}): Promise<ProjectTimeLogRec> {
+  const ts = nowISO();
+  const row = {
+    id: newId(),
+    project_id: data.projectId,
+    user_id: data.userId,
+    work_date: data.workDate,
+    hours: data.hours,
+    created_at: ts,
+    updated_at: ts,
+  };
+  const { data: created, error } = await getSupabase()
+    .from("project_time_logs")
+    .insert(row)
+    .select()
+    .single();
+  dbError(error);
+  return toProjectTimeLogRec(created as ProjectTimeLogRow);
 }
 
 export type EnrichedProjectComment = ProjectCommentRec & {
