@@ -1,7 +1,11 @@
+export const HEATMAP_MONTHS = 6;
+
 export type DayCell = {
   date: string;
   hours: number;
-  inRange: boolean;
+  inWindow: boolean;
+  isFuture: boolean;
+  isBeforeStart: boolean;
 };
 
 export type HeatmapGrid = {
@@ -9,6 +13,7 @@ export type HeatmapGrid = {
   maxHours: number;
   totalHours: number;
   weekCount: number;
+  windowEndKey: string;
 };
 
 function pad(n: number): string {
@@ -27,6 +32,10 @@ export function parseDateKey(key: string): Date {
 export function parseProjectCreatedDate(createdAt: string): Date {
   const d = new Date(createdAt);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+export function addMonths(d: Date, months: number): Date {
+  return new Date(d.getFullYear(), d.getMonth() + months, d.getDate());
 }
 
 export function formatWorkDateLabel(key: string): string {
@@ -48,9 +57,11 @@ export function buildHeatmapGrid(
   const created = parseProjectCreatedDate(opts.projectCreatedAt);
   const createdKey = toDateKey(created);
   const todayKey = toDateKey(anchor);
+  const windowEnd = addMonths(created, HEATMAP_MONTHS);
+  const windowEndKey = toDateKey(windowEnd);
 
   const startSunday = startOfWeekSunday(created);
-  const endSunday = startOfWeekSunday(anchor);
+  const endSunday = startOfWeekSunday(windowEnd);
   const msPerWeek = 7 * 24 * 60 * 60 * 1000;
   const weekCount = Math.max(
     1,
@@ -67,16 +78,27 @@ export function buildHeatmapGrid(
       const cellDate = new Date(startSunday);
       cellDate.setDate(startSunday.getDate() + w * 7 + day);
       const key = toDateKey(cellDate);
-      const inRange = key >= createdKey && key <= todayKey;
-      const hours = inRange ? (hoursByDate[key] ?? 0) : 0;
-      if (inRange && hours > maxHours) maxHours = hours;
-      if (inRange) totalHours += hours;
-      column.push({ date: key, hours, inRange });
+      const isBeforeStart = key < createdKey;
+      const inWindow = key >= createdKey && key <= windowEndKey;
+      const isFuture = key > todayKey;
+      const isLoggable = inWindow && !isBeforeStart && !isFuture;
+      const hours = isLoggable ? (hoursByDate[key] ?? 0) : 0;
+
+      if (isLoggable && hours > maxHours) maxHours = hours;
+      if (isLoggable) totalHours += hours;
+
+      column.push({
+        date: key,
+        hours,
+        inWindow,
+        isFuture,
+        isBeforeStart,
+      });
     }
     weeks.push(column);
   }
 
-  return { weeks, maxHours, totalHours, weekCount };
+  return { weeks, maxHours, totalHours, weekCount, windowEndKey };
 }
 
 const LEVEL_COLORS = [
@@ -97,8 +119,13 @@ export function heatmapLevel(hours: number, maxHours: number): number {
   return 1;
 }
 
-export function heatmapColorClass(hours: number, maxHours: number, inRange: boolean): string {
-  if (!inRange) return "bg-slate-50";
+export function heatmapColorClass(
+  hours: number,
+  maxHours: number,
+  day: Pick<DayCell, "inWindow" | "isFuture" | "isBeforeStart">
+): string {
+  if (!day.inWindow || day.isBeforeStart) return "bg-slate-50";
+  if (day.isFuture) return "bg-slate-100";
   return LEVEL_COLORS[heatmapLevel(hours, maxHours)];
 }
 

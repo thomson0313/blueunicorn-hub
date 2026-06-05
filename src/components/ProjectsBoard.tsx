@@ -476,7 +476,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           <span className="text-slate-500">Budget: {displayProjectBudget(p)}</span>
           <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
         </div>
-        {p.budgetType === "hourly" && !isAdmin ? (
+        {p.budgetType === "hourly" ? (
           <div className="mt-4 w-full">
             <div className="flex justify-between text-sm mb-2">
               <span className="text-slate-600">Time logged</span>
@@ -488,8 +488,6 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
               compact
             />
           </div>
-        ) : p.budgetType === "hourly" && isAdmin ? (
-          <p className="mt-4 text-sm text-slate-500">{formatHours(p.totalLoggedHours ?? 0)} hr logged</p>
         ) : (
           <div className="mt-4">
             <div className="flex justify-between text-sm mb-1">
@@ -542,7 +540,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           </div>
         </div>
         <div className="w-full sm:w-auto sm:max-w-[min(100%,18rem)] shrink-0 self-start order-3 sm:order-none">
-          {p.budgetType === "hourly" && !isAdmin ? (
+          {p.budgetType === "hourly" ? (
             <div className="w-full">
               <ProjectTimeHeatmap
                 hoursByDate={p.timeByDate ?? {}}
@@ -553,10 +551,6 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
                 {formatHours(p.totalLoggedHours ?? 0)} hr
               </p>
             </div>
-          ) : p.budgetType === "hourly" && isAdmin ? (
-            <p className="text-xs text-left sm:text-right text-slate-500">
-              {formatHours(p.totalLoggedHours ?? 0)} hr logged
-            </p>
           ) : (
             <>
               <ProgressBar value={p.completionRate} />

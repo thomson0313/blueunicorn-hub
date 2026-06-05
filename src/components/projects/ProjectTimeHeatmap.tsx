@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  HEATMAP_MONTHS,
   buildHeatmapGrid,
   formatHours,
   formatWorkDateLabel,
@@ -69,7 +70,9 @@ export function ProjectTimeHeatmap({
       </div>
       {!compact && (
         <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-500">
-          <span>{formatHours(grid.totalHours)} hr logged since project start</span>
+          <span>
+            {formatHours(grid.totalHours)} hr logged · {HEATMAP_MONTHS} months from start
+          </span>
           <div className="flex items-center gap-1">
             <span>Less</span>
             <div className="flex gap-[2px]">
@@ -119,20 +122,24 @@ function HeatmapCell({
   onHover: (text: string, el: HTMLElement) => void;
   onLeave: () => void;
 }) {
-  const label = !day.inRange
+  const label = !day.inWindow || day.isBeforeStart
     ? `${formatWorkDateLabel(day.date)} — Outside project range`
-    : day.hours > 0
-      ? `${formatWorkDateLabel(day.date)} — ${formatHours(day.hours)} hr`
-      : `${formatWorkDateLabel(day.date)} — No time logged`;
+    : day.isFuture
+      ? `${formatWorkDateLabel(day.date)} — Upcoming`
+      : day.hours > 0
+        ? `${formatWorkDateLabel(day.date)} — ${formatHours(day.hours)} hr`
+        : `${formatWorkDateLabel(day.date)} — No time logged`;
+
+  const showCell = day.inWindow && !day.isBeforeStart;
 
   return (
     <span
       role="img"
       aria-label={label}
-      className={`${className} rounded-sm shrink-0 ${heatmapColorClass(day.hours, maxHours, day.inRange)} ${
-        day.inRange ? "cursor-default" : "opacity-30"
+      className={`${className} rounded-sm shrink-0 ${heatmapColorClass(day.hours, maxHours, day)} ${
+        showCell ? "cursor-default" : "opacity-30"
       }`}
-      onMouseEnter={(e) => day.inRange && onHover(label, e.currentTarget)}
+      onMouseEnter={(e) => showCell && onHover(label, e.currentTarget)}
       onMouseLeave={onLeave}
     />
   );
