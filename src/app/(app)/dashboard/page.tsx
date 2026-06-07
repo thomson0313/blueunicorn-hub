@@ -11,6 +11,7 @@ import {
 } from "@/lib/dashboard-stats";
 import { userDailyScore, teamAverageScore } from "@/lib/daily-score";
 import { DashboardMemberCard, DashboardProjectRow } from "@/components/dashboard/DashboardProjectRow";
+import { DashboardSearch } from "@/components/dashboard/DashboardSearch";
 import { DashboardStatCard } from "@/components/dashboard/DashboardStatCard";
 import { ScoreAvatar } from "@/components/ScoreAvatar";
 import {
@@ -58,6 +59,8 @@ export default async function DashboardPage() {
             View all projects →
           </Link>
         </div>
+
+        <DashboardSearch isAdmin={false} />
 
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           <DashboardStatCard
@@ -169,6 +172,8 @@ export default async function DashboardPage() {
           Manage projects →
         </Link>
       </div>
+
+      <DashboardSearch isAdmin />
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         <DashboardStatCard
