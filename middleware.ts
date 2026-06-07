@@ -5,8 +5,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const secretKey = new TextEncoder().encode(JWT_SECRET);
 const COOKIE_NAME = "session";
 
-const PROTECTED = ["/dashboard", "/projects", "/chat", "/admin"];
-const AUTH_PAGES = ["/login", "/signup", "/forgot-password", "/reset-password"];
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/reset-password"];
 
 type Session = {
   sub: string;
@@ -17,6 +16,10 @@ type Session = {
 function sessionMayUseApp(session: Session): boolean {
   if (session.role === "admin") return true;
   return session.approvalStatus === "accepted";
+}
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.includes(pathname);
 }
 
 async function readSession(req: NextRequest): Promise<Session | null> {
@@ -33,14 +36,14 @@ async function readSession(req: NextRequest): Promise<Session | null> {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const session = await readSession(req);
+  const isPublic = isPublicPath(pathname);
 
-  const isProtected = PROTECTED.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  const isAuthPage = AUTH_PAGES.some((p) => pathname === p);
-
-  if (isProtected && !session) {
+  if (!isPublic && !session) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", pathname);
+    if (pathname !== "/") {
+      url.searchParams.set("next", pathname);
+    }
     return NextResponse.redirect(url);
   }
 
@@ -50,7 +53,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (isAuthPage && session && sessionMayUseApp(session)) {
+  if (isPublic && session && sessionMayUseApp(session)) {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
@@ -60,15 +63,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/",
-    "/dashboard/:path*",
-    "/projects/:path*",
-    "/chat/:path*",
-    "/admin/:path*",
-    "/login",
-    "/signup",
-    "/forgot-password",
-    "/reset-password",
-  ],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };
