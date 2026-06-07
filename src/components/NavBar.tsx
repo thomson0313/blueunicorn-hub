@@ -14,8 +14,15 @@ export function NavBar() {
 
   const navLinks = [
     { href: "/dashboard", label: "Dashboard" },
-    { href: "/projects", label: "My Projects" },
+    { href: "/projects", label: "Projects" },
   ];
+
+  const projectSubLinks = [
+    { href: "/projects", label: "All Projects" },
+    { href: "/projects/archived", label: "Archived" },
+  ];
+
+  const onProjectsSection = pathname === "/projects" || pathname.startsWith("/projects/");
 
   const linkClass = (active: boolean) =>
     `px-3 py-1.5 rounded-lg text-sm font-medium transition whitespace-nowrap ${
@@ -32,7 +39,10 @@ export function NavBar() {
           </Link>
           <div className="hidden md:flex items-center gap-1">
             {navLinks.map((l) => {
-              const active = pathname === l.href || pathname.startsWith(l.href + "/");
+              const active =
+                l.href === "/projects"
+                  ? onProjectsSection
+                  : pathname === l.href || pathname.startsWith(l.href + "/");
               return (
                 <Link key={l.href} href={l.href} className={linkClass(active)}>
                   {l.label}
@@ -60,14 +70,40 @@ export function NavBar() {
       </div>
       <div className="md:hidden bg-brand-700/40 px-2 py-1.5 flex items-center gap-1 overflow-x-auto">
         {navLinks.map((l) => {
-          const active = pathname === l.href || pathname.startsWith(l.href + "/");
+          const active =
+            l.href === "/projects"
+              ? onProjectsSection
+              : pathname === l.href || pathname.startsWith(l.href + "/");
           return (
             <Link key={l.href} href={l.href} className={linkClass(active)}>
               {l.label}
             </Link>
           );
         })}
+        {onProjectsSection &&
+          projectSubLinks.map((l) => {
+            const active = pathname === l.href;
+            return (
+              <Link key={l.href} href={l.href} className={`${linkClass(active)} text-xs`}>
+                {l.label}
+              </Link>
+            );
+          })}
       </div>
+      {onProjectsSection && (
+        <div className="hidden md:flex bg-brand-700/30 px-4 py-1.5 gap-1 border-t border-white/10">
+          <div className="max-w-6xl mx-auto w-full flex items-center gap-1">
+            {projectSubLinks.map((l) => {
+              const active = pathname === l.href;
+              return (
+                <Link key={l.href} href={l.href} className={`${linkClass(active)} text-xs`}>
+                  {l.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

@@ -19,8 +19,12 @@ import {
 
 type NavItem = { href: string; label: string; icon: ReactNode };
 
+const PROJECT_SUB_LINKS = [
+  { href: "/admin/projects", label: "All Projects" },
+  { href: "/admin/projects/archived", label: "Archived Projects" },
+];
+
 const ADMIN_LINKS: NavItem[] = [
-  { href: "/admin/projects", label: "Projects", icon: <IconProjects /> },
   { href: "/admin/members", label: "Members", icon: <IconMembers /> },
   { href: "/admin/fields", label: "Add-ons", icon: <IconAddons /> },
   { href: "/admin/alerts", label: "Alerts", icon: <IconAlerts /> },
@@ -69,6 +73,41 @@ export function AdminSidebar() {
           </>
         )}
       </Link>
+    );
+  }
+
+  function ProjectsNavGroup() {
+    if (collapsed) {
+      return (
+        <Link
+          href="/admin/projects"
+          className={linkClass("/admin/projects")}
+          title="Projects"
+        >
+          <IconProjects />
+        </Link>
+      );
+    }
+    return (
+      <div className="space-y-0.5">
+        <div className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-brand-100">
+          <IconProjects />
+          <span>Projects</span>
+        </div>
+        {PROJECT_SUB_LINKS.map((sub) => (
+          <Link
+            key={sub.href}
+            href={sub.href}
+            className={`block pl-10 pr-3 py-2 rounded-lg text-sm transition ${
+              pathname === sub.href
+                ? "bg-white/20 text-white font-medium"
+                : "text-brand-100 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            {sub.label}
+          </Link>
+        ))}
+      </div>
     );
   }
 
@@ -123,6 +162,7 @@ export function AdminSidebar() {
             {!collapsed && (
               <p className="px-3 text-[10px] uppercase tracking-wider text-brand-200 mb-2">Management</p>
             )}
+            <ProjectsNavGroup />
             {ADMIN_LINKS.map((l) => (
               <NavLink key={l.href} item={l} />
             ))}

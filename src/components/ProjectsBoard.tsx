@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Project, ProjectStatus, MemberField, BudgetType } from "@/lib/types";
 import { Avatar } from "@/components/Avatar";
@@ -20,6 +21,7 @@ import { isProjectUrgent } from "@/lib/project-timeline";
 import { sortProjects, type ProjectSortKey } from "@/lib/project-sort";
 import { timeAgo } from "@/lib/time-ago";
 import { useApp } from "@/components/AppProvider";
+import { ProjectsSubNav } from "@/components/projects/ProjectsSubNav";
 
 type Mode = "member" | "admin";
 type BoardVariant = "active" | "archived";
@@ -103,6 +105,34 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
   const [refreshing, setRefreshing] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
+  const hashHandledRef = useRef<string | null>(null);
+
+  const activeProjectsHref = isAdmin ? "/admin/projects" : "/projects";
+
+  const syncProjectUrl = useCallback(
+    (projectId: string | null) => {
+      const base = isAdmin
+        ? isArchivedView
+          ? "/admin/projects/archived"
+          : "/admin/projects"
+        : isArchivedView
+          ? "/projects/archived"
+          : "/projects";
+      const url = projectId ? `${base}#${projectId}` : base;
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", url);
+      }
+    },
+    [isAdmin, isArchivedView]
+  );
+
+  const closeEditModal = useCallback(() => {
+    setEditOpen(false);
+    setEditing(null);
+    editBaselineRef.current = null;
+    hashHandledRef.current = null;
+    syncProjectUrl(null);
+  }, [syncProjectUrl]);
 
   const patchForm = useCallback((patch: Partial<ProjectFormState>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -170,6 +200,43 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
   }, [loadProjects]);
 
   useEffect(() => {
+    if (loading) return;
+
+    function openFromHash() {
+      const id = window.location.hash.slice(1);
+      if (!id) {
+        hashHandledRef.current = null;
+        return;
+      }
+      const p = projects.find((pr) => pr._id === id);
+      if (!p || hashHandledRef.current === id) return;
+      hashHandledRef.current = id;
+      const budget = budgetFieldsFromProject(p);
+      const initial: ProjectFormState = {
+        title: p.title,
+        description: p.description,
+        fieldId: p.fieldId || "",
+        ...budget,
+        timeline: p.timeline,
+        previewLink: p.previewLink || "",
+        githubLink: p.githubLink || "",
+        assignTo: ownerId(p.owner),
+        completionRate: p.completionRate,
+      };
+      setEditing(p);
+      setForm(initial);
+      editBaselineRef.current = initial;
+      setError("");
+      setEditOpen(true);
+      setMenuId(null);
+    }
+
+    openFromHash();
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, [loading, projects]);
+
+  useEffect(() => {
     if (!menuId) return;
     function onOutside(e: MouseEvent) {
       if (menuContainerRef.current?.contains(e.target as Node)) return;
@@ -220,6 +287,8 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
     setError("");
     setEditOpen(true);
     setMenuId(null);
+    hashHandledRef.current = p._id;
+    syncProjectUrl(p._id);
   }
 
   async function submitCreate(e: React.FormEvent) {
@@ -288,9 +357,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         setError(data.error || "Could not update project");
         return;
       }
-      setEditOpen(false);
-      setEditing(null);
-      editBaselineRef.current = null;
+      closeEditModal();
       await loadProjects();
     } finally {
       setSavingEdit(false);
@@ -606,6 +673,15 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
 
   return (
     <div className="space-y-6">
+      <ProjectsSubNav mode={isAdmin ? "admin" : "member"} />
+      {isArchivedView && (
+        <Link
+          href={activeProjectsHref}
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:underline"
+        >
+          ← Back to all projects
+        </Link>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
@@ -751,7 +827,14 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
                 ? "Create a project and assign it to a team member."
                 : "Add your first project to start tracking progress."}
           </p>
-          {!isArchivedView && (
+          {isArchivedView ? (
+            <Link
+              href={activeProjectsHref}
+              className="inline-block bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 transition"
+            >
+              View all projects
+            </Link>
+          ) : (
             <button
               type="button"
               onClick={openCreate}
@@ -826,11 +909,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       <Modal
         open={editOpen}
         onClose={() => {
-          if (!savingEdit) {
-            setEditOpen(false);
-            setEditing(null);
-            editBaselineRef.current = null;
-          }
+          if (!savingEdit) closeEditModal();
         }}
         title="Edit project"
         xl
@@ -868,11 +947,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
                   type="button"
                   variant="ghost"
                   disabled={savingEdit}
-                  onClick={() => {
-                    setEditOpen(false);
-                    setEditing(null);
-                    editBaselineRef.current = null;
-                  }}
+                  onClick={closeEditModal}
                 >
                   Cancel
                 </ActionButton>

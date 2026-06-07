@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
-import { listAllProjects, listProjectsByOwner, listUsers, publicUser } from "@/lib/repo";
+import { findUserById, listAllProjects, listProjectsByOwner, listUsers, publicUser } from "@/lib/repo";
 import {
   activeProjects,
   formatLoggedHours,
@@ -9,53 +9,47 @@ import {
   groupProjectsByOwner,
   summarizeProjects,
 } from "@/lib/dashboard-stats";
+import { userDailyScore, teamAverageScore } from "@/lib/daily-score";
 import { DashboardMemberCard, DashboardProjectRow } from "@/components/dashboard/DashboardProjectRow";
+import { DashboardStatCard } from "@/components/dashboard/DashboardStatCard";
+import { ScoreAvatar } from "@/components/ScoreAvatar";
+import {
+  IconStatCanceled,
+  IconStatCompleted,
+  IconStatFixed,
+  IconStatHourly,
+  IconStatHours,
+  IconStatMembers,
+  IconStatProgress,
+  IconStatProjects,
+  IconStatScore,
+  IconStatUrgent,
+} from "@/components/icons/DashboardIcons";
 import type { Project as ProjectType, PublicUser } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-function StatCard({
-  label,
-  value,
-  hint,
-  accent,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  accent?: "default" | "brand" | "emerald" | "amber" | "red";
-}) {
-  const accents = {
-    default: "border-slate-200",
-    brand: "border-brand-200 bg-brand-50/40",
-    emerald: "border-emerald-200 bg-emerald-50/40",
-    amber: "border-amber-200 bg-amber-50/40",
-    red: "border-red-200 bg-red-50/40",
-  };
-  return (
-    <div className={`bg-white rounded-xl border p-4 ${accents[accent ?? "default"]}`}>
-      <div className="text-2xl font-bold text-slate-900">{value}</div>
-      <div className="text-sm text-slate-600 font-medium">{label}</div>
-      {hint && <div className="text-xs text-slate-400 mt-1">{hint}</div>}
-    </div>
-  );
-}
 
 export default async function DashboardPage() {
   const session = (await getSession())!;
   await connectDB();
 
   if (session.role === "member") {
+    const meUser = await findUserById(session.sub);
+    const me = meUser ? await publicUser(meUser) : null;
     const allProjects = (await listProjectsByOwner(session.sub)) as unknown as ProjectType[];
     const projects = activeProjects(allProjects);
     const summary = summarizeProjects(allProjects);
+    const dailyScore = userDailyScore(allProjects);
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Welcome, {session.name}</h1>
-            <p className="text-slate-500">Your active project workload and progress at a glance.</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <ScoreAvatar name={session.name} src={me?.avatarUrl} size={56} score={dailyScore} />
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Welcome, {session.name}</h1>
+              <p className="text-slate-500">Today&apos;s score and active project workload.</p>
+            </div>
           </div>
           <Link
             href="/projects"
@@ -65,33 +59,42 @@ export default async function DashboardPage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <StatCard label="Active projects" value={String(summary.totalActive)} />
-          <StatCard
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+          <DashboardStatCard
+            label="Today's score"
+            value={`${dailyScore}%`}
+            accent="brand"
+            icon={<IconStatScore />}
+          />
+          <DashboardStatCard
+            label="Active projects"
+            value={String(summary.totalActive)}
+            icon={<IconStatProjects />}
+          />
+          <DashboardStatCard
             label="In progress"
             value={String(summary.inProgress)}
             accent="brand"
+            icon={<IconStatProgress />}
           />
-          <StatCard
+          <DashboardStatCard
             label="Completed"
             value={String(summary.completed)}
             accent="emerald"
+            icon={<IconStatCompleted />}
           />
-          <StatCard
+          <DashboardStatCard
             label={summary.hourlyCount > 0 ? "Hours logged" : "Avg. completion"}
             value={
               summary.hourlyCount > 0
                 ? formatLoggedHours(summary.totalLoggedHours)
                 : `${summary.fixedAvgCompletion}%`
             }
+            icon={summary.hourlyCount > 0 ? <IconStatHours /> : <IconStatFixed />}
             hint={
               summary.hourlyCount > 0 && summary.fixedCount > 0
                 ? `${summary.fixedCount} fixed · ${summary.fixedAvgCompletion}% avg`
-                : summary.hourlyCount > 0
-                  ? `${summary.hourlyCount} hourly project${summary.hourlyCount === 1 ? "" : "s"}`
-                  : summary.fixedCount > 0
-                    ? `${summary.fixedCount} fixed project${summary.fixedCount === 1 ? "" : "s"}`
-                    : undefined
+                : undefined
             }
           />
         </div>
@@ -99,16 +102,20 @@ export default async function DashboardPage() {
         {(summary.urgent > 0 || summary.canceled > 0) && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
             {summary.urgent > 0 && (
-              <StatCard label="Urgent" value={String(summary.urgent)} accent="red" hint="Due soon" />
+              <DashboardStatCard
+                label="Urgent"
+                value={String(summary.urgent)}
+                accent="red"
+                hint="Due soon"
+                icon={<IconStatUrgent />}
+              />
             )}
             {summary.canceled > 0 && (
-              <StatCard label="Canceled" value={String(summary.canceled)} accent="amber" />
-            )}
-            {summary.hourlyCount > 0 && summary.fixedCount > 0 && (
-              <StatCard
-                label="Project mix"
-                value={`${summary.hourlyCount}h / ${summary.fixedCount}f`}
-                hint="Hourly / fixed"
+              <DashboardStatCard
+                label="Canceled"
+                value={String(summary.canceled)}
+                accent="amber"
+                icon={<IconStatCanceled />}
               />
             )}
           </div>
@@ -123,7 +130,9 @@ export default async function DashboardPage() {
               </p>
             </div>
           ) : (
-            projects.map((p) => <DashboardProjectRow key={p._id} project={p} />)
+            projects.map((p) => (
+              <DashboardProjectRow key={p._id} project={p} projectsHref="/projects" />
+            ))
           )}
         </div>
       </div>
@@ -140,12 +149,18 @@ export default async function DashboardPage() {
   const teamMembers = memberSummaries(members, byOwner);
   const memberCount = members.filter((m) => m.role === "member").length;
 
+  const memberScores = teamMembers.map(({ member, projects }) => ({
+    member,
+    score: userDailyScore(projects),
+  }));
+  const avgTeamScore = teamAverageScore(memberScores.map((m) => m.score));
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Team Dashboard</h1>
-          <p className="text-slate-500">Workload, status, and progress across the team.</p>
+          <p className="text-slate-500">Workload, daily scores, and progress across the team.</p>
         </div>
         <Link
           href="/admin/projects"
@@ -155,23 +170,41 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard label="Team members" value={String(memberCount)} hint={`${members.length} accounts total`} />
-        <StatCard label="Active projects" value={String(teamSummary.totalActive)} />
-        <StatCard
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <DashboardStatCard
+          label="Team avg. score"
+          value={`${avgTeamScore}%`}
+          accent="brand"
+          icon={<IconStatScore />}
+          hint="Today's combined member scores"
+        />
+        <DashboardStatCard
+          label="Team members"
+          value={String(memberCount)}
+          hint={`${members.length} accounts total`}
+          icon={<IconStatMembers />}
+        />
+        <DashboardStatCard
+          label="Active projects"
+          value={String(teamSummary.totalActive)}
+          icon={<IconStatProjects />}
+        />
+        <DashboardStatCard
           label="In progress"
           value={String(teamSummary.inProgress)}
           accent="brand"
+          icon={<IconStatProgress />}
         />
-        <StatCard
+        <DashboardStatCard
           label="Completed"
           value={String(teamSummary.completed)}
           accent="emerald"
+          icon={<IconStatCompleted />}
         />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard
+        <DashboardStatCard
           label="Hourly projects"
           value={String(teamSummary.hourlyCount)}
           hint={
@@ -179,8 +212,9 @@ export default async function DashboardPage() {
               ? formatLoggedHours(teamSummary.totalLoggedHours) + " total"
               : "No hourly projects"
           }
+          icon={<IconStatHourly />}
         />
-        <StatCard
+        <DashboardStatCard
           label="Fixed projects"
           value={String(teamSummary.fixedCount)}
           hint={
@@ -188,32 +222,41 @@ export default async function DashboardPage() {
               ? `${teamSummary.fixedAvgCompletion}% avg completion`
               : "No fixed projects"
           }
+          icon={<IconStatFixed />}
         />
-        <StatCard
+        <DashboardStatCard
           label="Urgent"
           value={String(teamSummary.urgent)}
           accent={teamSummary.urgent > 0 ? "red" : "default"}
           hint="Approaching due date"
+          icon={<IconStatUrgent />}
         />
-        <StatCard
+        <DashboardStatCard
           label="Canceled"
           value={String(teamSummary.canceled)}
           accent={teamSummary.canceled > 0 ? "amber" : "default"}
+          icon={<IconStatCanceled />}
         />
       </div>
 
       <div className="grid gap-5">
-        {teamMembers.map(({ member, projects, summary }) => (
-          <DashboardMemberCard
-            key={member._id}
-            memberId={member._id}
-            name={member.name}
-            role={member.role}
-            fieldName={member.fieldName}
-            summary={summary}
-            projects={projects}
-          />
-        ))}
+        {teamMembers.map(({ member, projects, summary }) => {
+          const scoreEntry = memberScores.find((s) => s.member._id === member._id);
+          return (
+            <DashboardMemberCard
+              key={member._id}
+              memberId={member._id}
+              name={member.name}
+              role={member.role}
+              fieldName={member.fieldName}
+              avatarUrl={member.avatarUrl}
+              score={scoreEntry?.score ?? 0}
+              summary={summary}
+              projects={projects}
+              projectsHref="/admin/projects"
+            />
+          );
+        })}
       </div>
     </div>
   );

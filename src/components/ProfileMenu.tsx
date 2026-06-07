@@ -28,13 +28,11 @@ function RoleBadge({ role }: { role: "admin" | "member" }) {
 function ProfilePopup({
   user,
   profile,
-  archivedHref,
   onClose,
   onLogout,
 }: {
   user: { name: string; email: string; role: "admin" | "member" };
   profile: Profile | null;
-  archivedHref: string;
   onClose: () => void;
   onLogout: () => void;
 }) {
@@ -57,9 +55,6 @@ function ProfilePopup({
         <Link href="/profile" onClick={onClose} className="block px-4 py-2 text-slate-700 hover:bg-slate-50">
           Profile
         </Link>
-        <Link href={archivedHref} onClick={onClose} className="block px-4 py-2 text-slate-700 hover:bg-slate-50">
-          Archived projects
-        </Link>
         <button
           type="button"
           onClick={onLogout}
@@ -79,7 +74,6 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const archivedHref = user.role === "admin" ? "/admin/projects/archived" : "/projects/archived";
   const isLight = theme === "light";
 
   useEffect(() => {
@@ -110,7 +104,6 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
     <ProfilePopup
       user={user}
       profile={profile}
-      archivedHref={archivedHref}
       onClose={() => setOpen(false)}
       onLogout={() => void logout()}
     />
@@ -174,9 +167,6 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
           <nav className="py-1">
             <Link href="/profile" onClick={() => setOpen(false)} className="block px-4 py-2 text-slate-700 hover:bg-slate-50">
               Profile
-            </Link>
-            <Link href={archivedHref} onClick={() => setOpen(false)} className="block px-4 py-2 text-slate-700 hover:bg-slate-50">
-              Archived projects
             </Link>
             <button
               type="button"
