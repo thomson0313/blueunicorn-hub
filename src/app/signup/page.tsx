@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { RequiredLabel } from "@/components/RequiredLabel";
 import type { MemberField } from "@/lib/types";
+import { APPROVAL_PENDING_LOGIN_MESSAGE } from "@/lib/user-approval";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -29,6 +31,7 @@ export default function SignupPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setSuccess("");
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -53,6 +56,10 @@ export default function SignupPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Signup failed");
+      if (data.pending) {
+        setSuccess(data.message || APPROVAL_PENDING_LOGIN_MESSAGE);
+        return;
+      }
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
@@ -138,10 +145,15 @@ export default function SignupPage() {
                 placeholder="Re-enter your password"
               />
             </div>
+            {success && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                {success}
+              </p>
+            )}
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !!success}
               className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-3 transition shadow-sm cursor-pointer"
             >
               {loading ? "Creating..." : "Create account"}

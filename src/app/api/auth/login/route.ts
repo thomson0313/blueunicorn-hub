@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { findUserByEmailOrUsername } from "@/lib/repo";
 import { comparePassword, signSession, type SessionPayload } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/session-cookie";
+import { canMemberAccessPlatform, loginBlockMessage } from "@/lib/user-approval";
 
 const schema = z.object({
   identifier: z.string().min(1, "Email or username is required"),
@@ -25,11 +26,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
+  if (user.role === "member" && !canMemberAccessPlatform(user.approvalStatus)) {
+    return NextResponse.json({ error: loginBlockMessage(user.approvalStatus) }, { status: 403 });
+  }
+
   const payload: SessionPayload = {
     sub: user._id,
     name: user.name,
     email: user.email,
     role: user.role,
+    approvalStatus: user.role === "member" ? user.approvalStatus : undefined,
   };
   const token = await signSession(payload);
 

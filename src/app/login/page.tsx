@@ -5,6 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { RequiredLabel } from "@/components/RequiredLabel";
+import {
+  APPROVAL_PENDING_LOGIN_MESSAGE,
+  APPROVAL_REJECTED_LOGIN_MESSAGE,
+} from "@/lib/user-approval";
 
 export default function LoginPage() {
   return (
@@ -20,7 +24,18 @@ function LoginForm() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const reason = params.get("reason");
+  const reasonMessage =
+    reason === "pending"
+      ? APPROVAL_PENDING_LOGIN_MESSAGE
+      : reason === "rejected"
+        ? APPROVAL_REJECTED_LOGIN_MESSAGE
+        : reason === "deleted"
+          ? "Your account no longer exists. Please contact an admin."
+          : "";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -86,6 +101,11 @@ function LoginForm() {
                 placeholder="Your password"
               />
             </div>
+            {(reasonMessage || info) && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                {reasonMessage || info}
+              </p>
+            )}
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"

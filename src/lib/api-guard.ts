@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSession, type SessionPayload } from "./auth";
+import { connectDB } from "./db";
+import { findUserById } from "./repo";
+import { canMemberAccessPlatform, loginBlockMessage } from "./user-approval";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -7,10 +10,20 @@ export class HttpError extends Error {
   }
 }
 
-/** Returns the session or throws an HttpError(401). */
+/** Returns the session or throws an HttpError(401). Members must be approved. */
 export async function requireUser(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) throw new HttpError(401, "Unauthorized");
+
+  if (session.role === "member") {
+    await connectDB();
+    const user = await findUserById(session.sub);
+    if (!user) throw new HttpError(401, "Unauthorized");
+    if (!canMemberAccessPlatform(user.approvalStatus)) {
+      throw new HttpError(403, loginBlockMessage(user.approvalStatus));
+    }
+  }
+
   return session;
 }
 

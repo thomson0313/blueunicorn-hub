@@ -109,6 +109,7 @@ export async function PATCH(req: Request) {
         name: user.name,
         email: user.email,
         role: user.role,
+        approvalStatus: user.role === "member" ? user.approvalStatus : undefined,
       };
       setSessionCookie(res, await signSession(payload));
     }

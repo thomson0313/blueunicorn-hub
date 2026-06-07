@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
+import type { ApprovalStatus } from "./user-approval";
 
 export type Role = "admin" | "member";
 
@@ -15,6 +16,7 @@ export interface UserRec {
   skills?: string;
   bio?: string;
   fieldId?: string | null;
+  approvalStatus: ApprovalStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +98,7 @@ type UserRow = {
   username: string | null;
   password_hash: string;
   role: string;
+  approval_status?: string;
   field_id: string | null;
   avatar_url: string | null;
   skills: string;
@@ -201,6 +204,9 @@ function toUserRec(row: UserRow): UserRec {
     username: row.username,
     passwordHash: row.password_hash,
     role: row.role as Role,
+    approvalStatus: (row.approval_status === "accepted" || row.approval_status === "rejected"
+      ? row.approval_status
+      : "pending") as ApprovalStatus,
     fieldId: row.field_id ?? null,
     avatarUrl: row.avatar_url,
     skills: row.skills ?? "",
@@ -424,6 +430,7 @@ export async function createUser(data: {
   passwordHash: string;
   role: Role;
   fieldId?: string | null;
+  approvalStatus?: ApprovalStatus;
 }): Promise<UserRec> {
   const ts = nowISO();
   const row = {
@@ -433,6 +440,7 @@ export async function createUser(data: {
     username: data.username || null,
     password_hash: data.passwordHash,
     role: data.role,
+    approval_status: data.approvalStatus ?? (data.role === "admin" ? "accepted" : "pending"),
     field_id: data.fieldId ?? null,
     skills: "",
     bio: "",
@@ -464,7 +472,19 @@ export async function isEmailOrUsernameTakenByOther(
 export async function updateUser(
   id: string,
   patch: Partial<
-    Pick<UserRec, "name" | "role" | "passwordHash" | "avatarUrl" | "skills" | "bio" | "email" | "username" | "fieldId">
+    Pick<
+      UserRec,
+      | "name"
+      | "role"
+      | "passwordHash"
+      | "avatarUrl"
+      | "skills"
+      | "bio"
+      | "email"
+      | "username"
+      | "fieldId"
+      | "approvalStatus"
+    >
   >
 ): Promise<UserRec | null> {
   const payload: Record<string, unknown> = { updated_at: nowISO() };
@@ -473,6 +493,7 @@ export async function updateUser(
   if (patch.username !== undefined) payload.username = patch.username || null;
   if (patch.fieldId !== undefined) payload.field_id = patch.fieldId;
   if (patch.role !== undefined) payload.role = patch.role;
+  if (patch.approvalStatus !== undefined) payload.approval_status = patch.approvalStatus;
   if (patch.passwordHash !== undefined) payload.password_hash = patch.passwordHash;
   if (patch.avatarUrl !== undefined) payload.avatar_url = patch.avatarUrl;
   if (patch.skills !== undefined) payload.skills = patch.skills;

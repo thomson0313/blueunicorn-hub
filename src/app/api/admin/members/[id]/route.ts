@@ -12,6 +12,7 @@ const updateSchema = z.object({
   role: z.enum(["admin", "member"]).optional(),
   fieldId: z.string().uuid().nullable().optional(),
   password: z.string().min(6, "Password must be at least 6 characters").optional(),
+  approvalStatus: z.enum(["accepted", "rejected"]).optional(),
 });
 
 // PATCH /api/admin/members/:id -> change role, rename, or reset password.
@@ -39,12 +40,18 @@ export async function PATCH(req: Request, { params }: Ctx) {
       if (!field) throw new HttpError(400, "Invalid field");
     }
 
-    const updated = await updateUser(id, {
+    const patch: Parameters<typeof updateUser>[1] = {
       name: parsed.data.name,
       role: parsed.data.role,
       fieldId: parsed.data.fieldId,
       passwordHash: parsed.data.password ? await hashPassword(parsed.data.password) : undefined,
-    });
+      approvalStatus: parsed.data.approvalStatus,
+    };
+    if (parsed.data.role === "admin") {
+      patch.approvalStatus = "accepted";
+    }
+
+    const updated = await updateUser(id, patch);
 
     const pub = updated ? await publicUser(updated) : null;
 
@@ -58,6 +65,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
             role: pub.role,
             fieldId: pub.fieldId,
             fieldName: pub.fieldName,
+            approvalStatus: updated?.approvalStatus,
           }
         : null,
     });

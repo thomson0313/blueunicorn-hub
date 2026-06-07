@@ -22,6 +22,7 @@ create table if not exists users (
   username text unique,
   password_hash text not null,
   role text not null check (role in ('admin', 'member')),
+  approval_status text not null default 'pending' check (approval_status in ('pending', 'accepted', 'rejected')),
   field_id uuid references member_fields(id),
   avatar_url text,
   skills text not null default '',

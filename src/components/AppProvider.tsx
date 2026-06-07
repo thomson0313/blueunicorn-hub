@@ -59,6 +59,33 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
       .catch(() => {});
   }, []);
 
+  // Log out if an admin rejects the account or deletes it while the user is online.
+  useEffect(() => {
+    let cancelled = false;
+
+    const verifySession = async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (cancelled || res.ok) return;
+        await fetch("/api/auth/logout", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        let reason = "pending";
+        if (res.status === 401) reason = "deleted";
+        else if (data.approvalStatus === "rejected") reason = "rejected";
+        window.location.href = `/login?reason=${reason}`;
+      } catch {
+        /* ignore */
+      }
+    };
+
+    verifySession();
+    const timer = setInterval(verifySession, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
   const bumpUnread = useCallback((convId: string, fromSelf: boolean) => {
     if (fromSelf) return;
     if (activeConvRef.current === convId) return;

@@ -8,7 +8,16 @@ const COOKIE_NAME = "session";
 const PROTECTED = ["/dashboard", "/projects", "/chat", "/admin"];
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password", "/reset-password"];
 
-type Session = { sub: string; role: "admin" | "member" };
+type Session = {
+  sub: string;
+  role: "admin" | "member";
+  approvalStatus?: "pending" | "accepted" | "rejected";
+};
+
+function sessionMayUseApp(session: Session): boolean {
+  if (session.role === "admin") return true;
+  return session.approvalStatus === "accepted";
+}
 
 async function readSession(req: NextRequest): Promise<Session | null> {
   const token = req.cookies.get(COOKIE_NAME)?.value;
@@ -41,7 +50,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (isAuthPage && session) {
+  if (isAuthPage && session && sessionMayUseApp(session)) {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

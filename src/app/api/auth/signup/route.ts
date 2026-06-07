@@ -9,6 +9,7 @@ import {
 } from "@/lib/repo";
 import { hashPassword, signSession, type SessionPayload } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/session-cookie";
+import { canMemberAccessPlatform, defaultApprovalForRole } from "@/lib/user-approval";
 
 const schema = z
   .object({
@@ -44,7 +45,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Email or username already in use" }, { status: 409 });
     }
 
-    const role: "admin" | "member" = (await countUsers()) === 0 ? "admin" : "member";
+    const isFirstUser = (await countUsers()) === 0;
+    const role: "admin" | "member" = isFirstUser ? "admin" : "member";
+    const approvalStatus = defaultApprovalForRole(role, isFirstUser);
 
     const passwordHash = await hashPassword(password);
     const user = await createUser({
@@ -54,13 +57,23 @@ export async function POST(req: Request) {
       passwordHash,
       role,
       fieldId,
+      approvalStatus,
     });
+
+    if (!canMemberAccessPlatform(user.approvalStatus)) {
+      return NextResponse.json({
+        pending: true,
+        message:
+          "Registration submitted. Please wait until an admin accepts your registration.",
+      });
+    }
 
     const payload: SessionPayload = {
       sub: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      approvalStatus: user.approvalStatus,
     };
     const token = await signSession(payload);
 

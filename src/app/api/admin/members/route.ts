@@ -25,6 +25,7 @@ export async function GET() {
           avatarUrl: u.avatarUrl ?? null,
           fieldId: pub.fieldId,
           fieldName: pub.fieldName,
+          approvalStatus: u.approvalStatus,
           createdAt: u.createdAt,
           projectCount: counts.get(u._id) || 0,
         };
@@ -63,7 +64,14 @@ export async function POST(req: Request) {
     }
 
     const passwordHash = await hashPassword(password);
-    const user = await createUser({ name, email, username: username || null, passwordHash, role });
+    const user = await createUser({
+      name,
+      email,
+      username: username || null,
+      passwordHash,
+      role,
+      approvalStatus: "accepted",
+    });
 
     return NextResponse.json(
       {

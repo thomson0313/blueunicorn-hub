@@ -18,6 +18,8 @@ export type SessionPayload = {
   name: string;
   email: string;
   role: "admin" | "member";
+  /** Members only — used by middleware to gate auth-page redirects. */
+  approvalStatus?: "pending" | "accepted" | "rejected";
 };
 
 export async function hashPassword(password: string): Promise<string> {
