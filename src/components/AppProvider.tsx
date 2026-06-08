@@ -92,12 +92,11 @@ export function AppProvider({
       try {
         const res = await fetch("/api/auth/session");
         if (cancelled || res.ok) return;
-        await fetch("/api/auth/logout", { method: "POST" });
         const data = await res.json().catch(() => ({}));
         let reason = "pending";
         if (res.status === 401) reason = "deleted";
         else if (data.approvalStatus === "rejected") reason = "rejected";
-        window.location.href = `/login?reason=${reason}`;
+        window.location.href = `/api/auth/force-logout?to=${encodeURIComponent(`/login?reason=${reason}`)}`;
       } catch {
         /* ignore */
       }

@@ -1293,6 +1293,22 @@ export async function countUsersByFieldId(fieldId: string): Promise<number> {
 
 /* ----------------------- Password reset ----------------------- */
 
+export async function findLatestPasswordResetForUser(
+  userId: string
+): Promise<{ createdAt: string } | null> {
+  const { data, error } = await getSupabase()
+    .from("password_resets")
+    .select("created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  dbError(error);
+  if (!data) return null;
+  const row = data as { created_at: string };
+  return { createdAt: row.created_at };
+}
+
 export async function createPasswordReset(userId: string, token: string, expiresAt: string): Promise<void> {
   await getSupabase().from("password_resets").delete().eq("user_id", userId);
   const { error } = await getSupabase().from("password_resets").insert({

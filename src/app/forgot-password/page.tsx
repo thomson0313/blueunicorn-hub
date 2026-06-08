@@ -64,7 +64,11 @@ export default function ForgotPasswordPage() {
               />
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
-            {message && <p className="text-sm text-emerald-700">{message}</p>}
+            {message && (
+              <p className="text-sm text-brand-700 bg-brand-50 border border-brand-100 rounded-lg px-3 py-2">
+                {message}
+              </p>
+            )}
             {resetLink && (
               <p className="text-xs text-slate-600 break-all bg-slate-50 p-3 rounded-lg border border-slate-200">
                 Dev reset link:{" "}

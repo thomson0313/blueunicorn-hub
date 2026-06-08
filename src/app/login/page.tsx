@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { RequiredLabel } from "@/components/RequiredLabel";
+import { PasswordInput } from "@/components/PasswordInput";
 import {
   APPROVAL_PENDING_LOGIN_MESSAGE,
   APPROVAL_REJECTED_LOGIN_MESSAGE,
@@ -92,13 +93,13 @@ function LoginForm() {
                   Forgot password?
                 </Link>
               </div>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className={inputClass}
                 placeholder="Your password"
+                autoComplete="current-password"
               />
             </div>
             {(reasonMessage || info) && (

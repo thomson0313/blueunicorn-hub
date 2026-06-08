@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { findUserById } from "@/lib/repo";
-import { clearSessionServer } from "@/lib/clear-session-server";
 import { canMemberAccessPlatform } from "@/lib/user-approval";
 import { isEmailVerified } from "@/lib/email-verification";
 import { AppProvider } from "@/components/AppProvider";
@@ -18,12 +17,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   await connectDB();
   const user = await findUserById(session.sub);
   if (!user) {
-    await clearSessionServer();
-    redirect("/login?reason=deleted");
+    redirect(`/api/auth/force-logout?to=${encodeURIComponent("/login?reason=deleted")}`);
   }
   if (user.role === "member" && !canMemberAccessPlatform(user.approvalStatus)) {
-    await clearSessionServer();
-    redirect(`/login?reason=${user.approvalStatus}`);
+    redirect(`/api/auth/force-logout?to=${encodeURIComponent(`/login?reason=${user.approvalStatus}`)}`);
   }
 
   return (

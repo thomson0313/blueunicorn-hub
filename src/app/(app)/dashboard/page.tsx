@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getSession } from "@/lib/auth";
+import { requirePageSession } from "@/lib/require-page-session";
 import { connectDB } from "@/lib/db";
 import { findUserById, listAllProjects, listProjectsByOwner, listUsers, publicUser } from "@/lib/repo";
 import {
@@ -31,7 +31,7 @@ import type { Project as ProjectType, PublicUser } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const session = (await getSession())!;
+  const session = await requirePageSession();
   await connectDB();
 
   if (session.role === "member") {

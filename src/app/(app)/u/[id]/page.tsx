@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { requirePageSession } from "@/lib/require-page-session";
 import { connectDB } from "@/lib/db";
 import { findUserById, listProjectsByOwner, publicUser } from "@/lib/repo";
 import { Avatar } from "@/components/Avatar";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function UserProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = (await getSession())!;
+  const session = await requirePageSession();
   await connectDB();
 
   const user = await findUserById(id);

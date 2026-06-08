@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { RequiredLabel } from "@/components/RequiredLabel";
+import { PasswordInput } from "@/components/PasswordInput";
 import type { MemberField } from "@/lib/types";
 import { APPROVAL_PENDING_LOGIN_MESSAGE } from "@/lib/user-approval";
 
@@ -123,26 +124,26 @@ export default function SignupPage() {
             </div>
             <div>
               <RequiredLabel>Password</RequiredLabel>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className={inputClass}
                 placeholder="At least 6 characters"
+                autoComplete="new-password"
               />
             </div>
             <div>
               <RequiredLabel>Confirm password</RequiredLabel>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 minLength={6}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className={inputClass}
                 placeholder="Re-enter your password"
+                autoComplete="new-password"
               />
             </div>
             {success && (

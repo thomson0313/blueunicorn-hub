@@ -6,6 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { ActionButton } from "@/components/ActionButton";
 import { PanelLoader } from "@/components/PanelLoader";
 import { RequiredLabel } from "@/components/RequiredLabel";
+import { PasswordInput } from "@/components/PasswordInput";
 import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
 import { SkillsTagInput, parseSkillsString, skillsToString } from "@/components/profile/SkillsTagInput";
 import { useApp } from "@/components/AppProvider";
@@ -270,8 +271,7 @@ export default function ProfilePage() {
         <h2 className="font-semibold text-slate-900">Password</h2>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Current password</label>
-          <input
-            type="password"
+          <PasswordInput
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             autoComplete="current-password"
@@ -280,8 +280,7 @@ export default function ProfilePage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">New password</label>
-          <input
-            type="password"
+          <PasswordInput
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             autoComplete="new-password"
@@ -290,8 +289,7 @@ export default function ProfilePage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Confirm new password</label>
-          <input
-            type="password"
+          <PasswordInput
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             autoComplete="new-password"

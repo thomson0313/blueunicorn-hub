@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { RequiredLabel } from "@/components/RequiredLabel";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function ResetPasswordPage() {
   return (
@@ -83,24 +84,24 @@ function ResetForm() {
           <form onSubmit={onSubmit} className="space-y-4 mt-6">
             <div>
               <RequiredLabel>New password</RequiredLabel>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className={inputClass}
+                autoComplete="new-password"
               />
             </div>
             <div>
               <RequiredLabel>Confirm password</RequiredLabel>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 minLength={6}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className={inputClass}
+                autoComplete="new-password"
               />
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
