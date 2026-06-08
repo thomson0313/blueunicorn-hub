@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+type ModalView = "verify" | "change-email";
+
 type EmailVerificationModalProps = {
   open: boolean;
   email: string;
@@ -10,6 +12,22 @@ type EmailVerificationModalProps = {
   onEmailChange: (email: string) => void;
 };
 
+function BackIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 6L6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
 export function EmailVerificationModal({
   open,
   email,
@@ -17,6 +35,7 @@ export function EmailVerificationModal({
   onVerified,
   onEmailChange,
 }: EmailVerificationModalProps) {
+  const [view, setView] = useState<ModalView>("verify");
   const [digits, setDigits] = useState<string[]>(Array(6).fill(""));
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -24,7 +43,6 @@ export function EmailVerificationModal({
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
-  const [showEmailForm, setShowEmailForm] = useState(false);
   const [newEmail, setNewEmail] = useState(email);
   const [updatingEmail, setUpdatingEmail] = useState(false);
   const [inputWarning, setInputWarning] = useState(false);
@@ -38,12 +56,12 @@ export function EmailVerificationModal({
   useEffect(() => {
     if (!open) {
       openedRef.current = false;
+      setView("verify");
       setDigits(Array(6).fill(""));
       setError("");
       setInfo("");
       setSuccess("");
       setCodeSent(false);
-      setShowEmailForm(false);
       setInputWarning(false);
       return;
     }
@@ -52,6 +70,12 @@ export function EmailVerificationModal({
       void sendCode();
     }
   }, [open]);
+
+  function goBackToVerify() {
+    setView("verify");
+    setNewEmail(email);
+    setError("");
+  }
 
   async function sendCode() {
     setSending(true);
@@ -81,7 +105,7 @@ export function EmailVerificationModal({
     }
   }
 
-  async function updateEmail(e: React.FormEvent) {
+  async function sendCodeToNewEmail(e: React.FormEvent) {
     e.preventDefault();
     setUpdatingEmail(true);
     setError("");
@@ -95,11 +119,12 @@ export function EmailVerificationModal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not update email");
 
-      onEmailChange(data.email || newEmail.trim().toLowerCase());
-      setShowEmailForm(false);
+      const updatedEmail = data.email || newEmail.trim().toLowerCase();
+      onEmailChange(updatedEmail);
+      setView("verify");
       setDigits(Array(6).fill(""));
       setCodeSent(false);
-      setInfo(data.message || "Email updated. Sending a new code...");
+      setInfo(data.message || `A code was sent to ${updatedEmail}.`);
       setInputWarning(true);
       await sendCode();
     } catch (err) {
@@ -184,135 +209,148 @@ export function EmailVerificationModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" aria-hidden />
-      <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl p-6">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
-          aria-label="Close"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
+      <div className="relative w-full max-w-md min-h-[460px] rounded-2xl bg-white shadow-2xl p-6 flex flex-col">
+        <div className="flex items-center justify-between mb-4 min-h-8">
+          {view === "change-email" ? (
+            <button
+              type="button"
+              onClick={goBackToVerify}
+              className="w-8 h-8 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
+              aria-label="Back"
+            >
+              <BackIcon />
+            </button>
+          ) : (
+            <span className="w-8" aria-hidden />
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
+            aria-label="Close"
+          >
+            <CloseIcon />
+          </button>
+        </div>
 
-        <h2 className="text-xl font-bold text-slate-900 pr-8">Verify your email</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Enter the 6-digit code sent to{" "}
-          <span className="font-medium text-slate-700">{email}</span>.
-        </p>
+        {view === "change-email" ? (
+          <div className="flex-1 flex flex-col">
+            <h2 className="text-xl font-bold text-slate-900">Change email address</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Enter your correct email and we&apos;ll send a new verification code.
+            </p>
 
-        <p className="mt-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Check your inbox and spam folder. The code expires in 15 minutes.
-        </p>
-
-        {showEmailForm ? (
-          <form onSubmit={updateEmail} className="mt-4 space-y-3">
-            <label className="block text-sm font-medium text-slate-700">New email address</label>
-            <input
-              type="email"
-              required
-              value={newEmail}
-              onChange={(e) => {
-                setNewEmail(e.target.value);
-                setError("");
-              }}
-              className={emailInputClass(!!error)}
-              placeholder="you@company.com"
-            />
-            {error && <p className="text-sm text-amber-700 font-medium">{error}</p>}
-            <div className="flex gap-2">
+            <form onSubmit={sendCodeToNewEmail} className="mt-6 flex-1 flex flex-col">
+              <label className="block text-sm font-medium text-slate-700 mb-1">New email address</label>
+              <input
+                type="email"
+                required
+                autoFocus
+                value={newEmail}
+                onChange={(e) => {
+                  setNewEmail(e.target.value);
+                  setError("");
+                }}
+                className={emailInputClass(!!error)}
+                placeholder="you@company.com"
+              />
+              {error && (
+                <p className="mt-3 text-sm text-amber-700 font-medium bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {error}
+                </p>
+              )}
               <button
                 type="submit"
                 disabled={updatingEmail}
-                className="flex-1 bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-2.5 transition cursor-pointer text-sm"
+                className="mt-auto pt-6 w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-3 transition cursor-pointer"
               >
-                {updatingEmail ? "Updating..." : "Update & resend code"}
+                {updatingEmail ? "Sending..." : "Send code"}
               </button>
+            </form>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col">
+            <h2 className="text-xl font-bold text-slate-900">Verify your email</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Enter the 6-digit code sent to{" "}
+              <span className="font-medium text-slate-700">{email}</span>.
+            </p>
+
+            <p className="mt-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Check your inbox and spam folder. The code expires in 15 minutes.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setView("change-email");
+                setNewEmail(email);
+                setError("");
+              }}
+              className="mt-3 text-sm text-brand-600 hover:underline cursor-pointer self-start"
+            >
+              Wrong email? Change it
+            </button>
+
+            <form onSubmit={confirmCode} className="mt-6 space-y-4 flex-1 flex flex-col">
+              <div className="flex justify-center gap-2" onPaste={onPaste}>
+                {digits.map((digit, index) => (
+                  <input
+                    key={index}
+                    ref={(el) => {
+                      inputRefs.current[index] = el;
+                    }}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={digit}
+                    disabled={!codeSent || sending || confirming || !!success}
+                    onChange={(e) => updateDigit(index, e.target.value)}
+                    onKeyDown={(e) => onKeyDown(index, e)}
+                    className={digitInputClass(!!error || inputWarning)}
+                    aria-label={`Digit ${index + 1}`}
+                  />
+                ))}
+              </div>
+
+              {info && !success && (
+                <p className="text-sm text-brand-700 bg-brand-50 border border-brand-100 rounded-lg px-3 py-2">
+                  {info}
+                </p>
+              )}
+              {error && (
+                <p className="text-sm text-amber-700 font-medium bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {error}
+                </p>
+              )}
+              {success && (
+                <p className="text-sm text-green-700 font-medium bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  {success}
+                </p>
+              )}
+
+              {!success && (
+                <button
+                  type="submit"
+                  disabled={!codeSent || sending || confirming}
+                  className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-3 transition cursor-pointer"
+                >
+                  {confirming ? "Verifying..." : "Confirm code"}
+                </button>
+              )}
+            </form>
+
+            {!success && (
               <button
                 type="button"
-                onClick={() => {
-                  setShowEmailForm(false);
-                  setNewEmail(email);
-                  setError("");
-                }}
-                className="px-4 text-sm text-slate-600 hover:underline cursor-pointer"
+                onClick={() => void sendCode()}
+                disabled={sending}
+                className="mt-4 w-full text-sm text-brand-600 hover:underline disabled:opacity-60 cursor-pointer"
               >
-                Cancel
+                {sending ? "Sending..." : "Resend code"}
               </button>
-            </div>
-          </form>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setShowEmailForm(true);
-              setNewEmail(email);
-              setError("");
-            }}
-            className="mt-3 text-sm text-brand-600 hover:underline cursor-pointer"
-          >
-            Wrong email? Change it
-          </button>
-        )}
-
-        <form onSubmit={confirmCode} className="mt-6 space-y-4">
-          <div className="flex justify-center gap-2" onPaste={onPaste}>
-            {digits.map((digit, index) => (
-              <input
-                key={index}
-                ref={(el) => {
-                  inputRefs.current[index] = el;
-                }}
-                type="text"
-                inputMode="numeric"
-                maxLength={1}
-                value={digit}
-                disabled={!codeSent || sending || confirming || !!success}
-                onChange={(e) => updateDigit(index, e.target.value)}
-                onKeyDown={(e) => onKeyDown(index, e)}
-                className={digitInputClass(!!error || inputWarning)}
-                aria-label={`Digit ${index + 1}`}
-              />
-            ))}
+            )}
           </div>
-
-          {info && !success && (
-            <p className="text-sm text-brand-700 bg-brand-50 border border-brand-100 rounded-lg px-3 py-2">
-              {info}
-            </p>
-          )}
-          {error && !showEmailForm && (
-            <p className="text-sm text-amber-700 font-medium bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              {error}
-            </p>
-          )}
-          {success && (
-            <p className="text-sm text-green-700 font-medium bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-              {success}
-            </p>
-          )}
-
-          {!success && (
-            <button
-              type="submit"
-              disabled={!codeSent || sending || confirming}
-              className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-semibold rounded-xl py-3 transition cursor-pointer"
-            >
-              {confirming ? "Verifying..." : "Confirm code"}
-            </button>
-          )}
-        </form>
-
-        {!success && (
-          <button
-            type="button"
-            onClick={() => void sendCode()}
-            disabled={sending || showEmailForm}
-            className="mt-4 w-full text-sm text-brand-600 hover:underline disabled:opacity-60 cursor-pointer"
-          >
-            {sending ? "Sending..." : "Resend code"}
-          </button>
         )}
       </div>
     </div>

@@ -33,4 +33,7 @@ export async function sendEmail({ to, subject, text, html }: SendEmailInput): Pr
   }
 
   console.log(`[email] To: ${to}\nSubject: ${subject}\n\n${text}`);
+  if (html) {
+    console.log(`[email] HTML preview logged (${html.length} chars). Set RESEND_API_KEY to deliver.`);
+  }
 }

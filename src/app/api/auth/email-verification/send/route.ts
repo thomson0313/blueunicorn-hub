@@ -15,8 +15,13 @@ import {
   verificationCodeExpiresAt,
 } from "@/lib/email-verification";
 import { sendEmail } from "@/lib/send-email";
+import {
+  appOriginFromRequest,
+  buildVerificationEmail,
+  verificationLogoUrl,
+} from "@/lib/email-templates/verification-email";
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
     const session = await requireSession();
     await connectDB();
@@ -40,20 +45,18 @@ export async function POST() {
     const expiresAt = verificationCodeExpiresAt();
     await createEmailVerificationCode(user._id, codeHash, expiresAt);
 
-    const text = [
-      `Hi ${user.name},`,
-      "",
-      `Your Blunicorn email verification code is: ${code}`,
-      "",
-      "This code expires in 15 minutes.",
-      "",
-      "If you did not request this, you can ignore this email.",
-    ].join("\n");
+    const origin = appOriginFromRequest(req);
+    const emailContent = buildVerificationEmail({
+      name: user.name,
+      code,
+      logoUrl: verificationLogoUrl(origin),
+    });
 
     await sendEmail({
       to: user.email,
-      subject: "Your Blunicorn verification code",
-      text,
+      subject: emailContent.subject,
+      text: emailContent.text,
+      html: emailContent.html,
     });
 
     const payload: Record<string, unknown> = {
