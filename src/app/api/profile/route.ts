@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { connectDB } from "@/lib/db";
 import {
+  deleteEmailVerificationCodes,
   findUserById,
   findMemberFieldById,
   updateUser,
@@ -69,6 +70,10 @@ export async function PATCH(req: Request) {
         throw new HttpError(409, "Email is already in use");
       }
       patch.email = email;
+      if (email !== existing.email) {
+        patch.emailVerifiedAt = null;
+        await deleteEmailVerificationCodes(me.sub);
+      }
     }
 
     if (parsed.data.username !== undefined) {

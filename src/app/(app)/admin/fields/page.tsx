@@ -51,7 +51,7 @@ export default function AdminAddonsPage() {
     load();
   }
 
-  if (loading) return <PanelLoader label="Loading add-ons..." />;
+  if (loading) return <PanelLoader variant="list" />;
 
   return (
     <div className="space-y-8">

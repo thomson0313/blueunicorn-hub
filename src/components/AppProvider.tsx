@@ -10,6 +10,9 @@ type RealtimeMode = "socket" | "polling";
 
 type AppContextValue = {
   user: SessionUser;
+  emailVerified: boolean;
+  userEmail: string;
+  setEmailVerified: (verified: boolean) => void;
   realtimeMode: RealtimeMode;
   socket: Socket | null;
   onlineUserIds: string[];
@@ -39,7 +42,22 @@ const REALTIME_MODE: RealtimeMode =
 const ALERT_POLL_MS = 15_000;
 const HUB_NOTIF_POLL_MS = 5_000;
 
-export function AppProvider({ user, children }: { user: SessionUser; children: React.ReactNode }) {
+export function AppProvider({
+  user,
+  emailVerified: initialEmailVerified,
+  userEmail,
+  children,
+}: {
+  user: SessionUser;
+  emailVerified: boolean;
+  userEmail: string;
+  children: React.ReactNode;
+}) {
+  const [emailVerified, setEmailVerified] = useState(initialEmailVerified);
+
+  useEffect(() => {
+    setEmailVerified(initialEmailVerified);
+  }, [initialEmailVerified]);
   const socketRef = useRef<Socket | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
@@ -53,11 +71,12 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
   const hubPollReadyRef = useRef(false);
 
   useEffect(() => {
+    if (!emailVerified) return;
     fetch("/api/profile")
       .then((r) => r.json())
       .then((d) => setAvatarUrl(d.profile?.avatarUrl ?? null))
       .catch(() => {});
-  }, []);
+  }, [emailVerified]);
 
   // Log out if an admin rejects the account or deletes it while the user is online.
   useEffect(() => {
@@ -103,6 +122,7 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
 
   // Deliver due scheduled alerts and show new ones (no cron — runs while the app is open).
   useEffect(() => {
+    if (!emailVerified) return;
     let cancelled = false;
 
     const pollAlerts = async () => {
@@ -127,11 +147,11 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
       cancelled = true;
       clearInterval(timer);
     };
-  }, [pushAlert]);
+  }, [emailVerified, pushAlert]);
 
   // Socket.IO — local custom server only.
   useEffect(() => {
-    if (REALTIME_MODE !== "socket") return;
+    if (!emailVerified || REALTIME_MODE !== "socket") return;
 
     const s = io({ path: "/socket.io", withCredentials: true });
     socketRef.current = s;
@@ -156,11 +176,11 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
       socketRef.current = null;
       setSocket(null);
     };
-  }, [user.sub, bumpUnread, pushAlert]);
+  }, [emailVerified, user.sub, bumpUnread, pushAlert]);
 
   // HTTP polling — Vercel serverless (chat + presence).
   useEffect(() => {
-    if (REALTIME_MODE !== "polling") return;
+    if (!emailVerified || REALTIME_MODE !== "polling") return;
 
     let cancelled = false;
 
@@ -210,9 +230,10 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
       clearInterval(presenceTimer);
       clearInterval(inboxTimer);
     };
-  }, [bumpUnread, user.sub]);
+  }, [emailVerified, bumpUnread, user.sub]);
 
   const refreshHubNotifications = useCallback(async () => {
+    if (!emailVerified) return;
     try {
       const res = await fetch("/api/notifications");
       if (!res.ok) return;
@@ -221,10 +242,11 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [emailVerified]);
 
   // Hub notifications — poll like chat inbox for near-instant badge + chime.
   useEffect(() => {
+    if (!emailVerified) return;
     let cancelled = false;
 
     const pollHub = async () => {
@@ -255,7 +277,7 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
       cancelled = true;
       clearInterval(timer);
     };
-  }, [refreshHubNotifications]);
+  }, [emailVerified, refreshHubNotifications]);
 
   const setActiveConversation = useCallback((id: string | null) => {
     activeConvRef.current = id;
@@ -283,6 +305,9 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
   const value = useMemo(
     () => ({
       user,
+      emailVerified,
+      userEmail,
+      setEmailVerified,
       realtimeMode: REALTIME_MODE,
       socket,
       onlineUserIds,
@@ -299,6 +324,8 @@ export function AppProvider({ user, children }: { user: SessionUser; children: R
     }),
     [
       user,
+      emailVerified,
+      userEmail,
       socket,
       onlineUserIds,
       alerts,

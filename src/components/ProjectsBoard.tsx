@@ -814,7 +814,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       </div>
 
       {loading ? (
-        <PanelLoader label="Loading projects..." />
+        <PanelLoader variant="grid" />
       ) : displayedProjects.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
           <p className="text-slate-600 font-medium">

@@ -13,7 +13,7 @@ import type { MemberField, Profile } from "@/lib/types";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { setAvatarUrl } = useApp();
+  const { setAvatarUrl, setEmailVerified } = useApp();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [fields, setFields] = useState<MemberField[]>([]);
 
@@ -95,7 +95,9 @@ export default function ProfilePage() {
         setError(data.error || "Could not save");
         return;
       }
+      const emailChanged = profile && email !== profile.email;
       setProfile(data.profile);
+      if (emailChanged) setEmailVerified(false);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -167,7 +169,7 @@ export default function ProfilePage() {
   const inputClass =
     "w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500";
 
-  if (loading || !profile) return <PanelLoader label="Loading profile..." />;
+  if (loading || !profile) return <PanelLoader variant="profile" />;
 
   return (
     <div className="max-w-2xl space-y-6">

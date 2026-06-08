@@ -144,7 +144,7 @@ export default function AdminMembersPage() {
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
-          <PanelLoader label="Loading members..." />
+          <PanelLoader variant="table" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[860px]">

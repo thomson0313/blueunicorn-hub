@@ -4,8 +4,10 @@ import { connectDB } from "@/lib/db";
 import { findUserById } from "@/lib/repo";
 import { clearSessionServer } from "@/lib/clear-session-server";
 import { canMemberAccessPlatform } from "@/lib/user-approval";
+import { isEmailVerified } from "@/lib/email-verification";
 import { AppProvider } from "@/components/AppProvider";
 import { AppChrome } from "@/components/AppChrome";
+import { EmailVerificationGate } from "@/components/EmailVerificationGate";
 import { AlertToaster } from "@/components/AlertToaster";
 import { FloatingChat } from "@/components/FloatingChat";
 
@@ -25,10 +27,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <AppProvider user={session}>
-      <AppChrome>{children}</AppChrome>
-      <AlertToaster />
-      <FloatingChat />
+    <AppProvider
+      user={session}
+      emailVerified={isEmailVerified(user.emailVerifiedAt)}
+      userEmail={user.email}
+    >
+      <EmailVerificationGate>
+        <AppChrome>{children}</AppChrome>
+        <AlertToaster />
+        <FloatingChat />
+      </EmailVerificationGate>
     </AppProvider>
   );
 }

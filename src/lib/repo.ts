@@ -17,6 +17,7 @@ export interface UserRec {
   bio?: string;
   fieldId?: string | null;
   approvalStatus: ApprovalStatus;
+  emailVerifiedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -104,6 +105,7 @@ type UserRow = {
   skills: string;
   bio?: string;
   plan?: string;
+  email_verified_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -207,6 +209,7 @@ function toUserRec(row: UserRow): UserRec {
     approvalStatus: (row.approval_status === "accepted" || row.approval_status === "rejected"
       ? row.approval_status
       : "pending") as ApprovalStatus,
+    emailVerifiedAt: row.email_verified_at ?? null,
     fieldId: row.field_id ?? null,
     avatarUrl: row.avatar_url,
     skills: row.skills ?? "",
@@ -484,6 +487,7 @@ export async function updateUser(
       | "username"
       | "fieldId"
       | "approvalStatus"
+      | "emailVerifiedAt"
     >
   >
 ): Promise<UserRec | null> {
@@ -494,6 +498,7 @@ export async function updateUser(
   if (patch.fieldId !== undefined) payload.field_id = patch.fieldId;
   if (patch.role !== undefined) payload.role = patch.role;
   if (patch.approvalStatus !== undefined) payload.approval_status = patch.approvalStatus;
+  if (patch.emailVerifiedAt !== undefined) payload.email_verified_at = patch.emailVerifiedAt;
   if (patch.passwordHash !== undefined) payload.password_hash = patch.passwordHash;
   if (patch.avatarUrl !== undefined) payload.avatar_url = patch.avatarUrl;
   if (patch.skills !== undefined) payload.skills = patch.skills;
@@ -1316,4 +1321,50 @@ export async function findPasswordResetByToken(
 export async function deletePasswordResetByToken(token: string): Promise<void> {
   const { error } = await getSupabase().from("password_resets").delete().eq("token", token);
   dbError(error);
+}
+
+/* ----------------------- Email verification ----------------------- */
+
+export async function createEmailVerificationCode(
+  userId: string,
+  codeHash: string,
+  expiresAt: string
+): Promise<void> {
+  await getSupabase().from("email_verification_codes").delete().eq("user_id", userId);
+  const { error } = await getSupabase().from("email_verification_codes").insert({
+    id: newId(),
+    user_id: userId,
+    code_hash: codeHash,
+    expires_at: expiresAt,
+  });
+  dbError(error);
+}
+
+export async function findLatestEmailVerificationCode(
+  userId: string
+): Promise<{ codeHash: string; expiresAt: string; createdAt: string } | null> {
+  const { data, error } = await getSupabase()
+    .from("email_verification_codes")
+    .select("code_hash, expires_at, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  dbError(error);
+  if (!data) return null;
+  const row = data as { code_hash: string; expires_at: string; created_at: string };
+  return {
+    codeHash: row.code_hash,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+  };
+}
+
+export async function deleteEmailVerificationCodes(userId: string): Promise<void> {
+  const { error } = await getSupabase().from("email_verification_codes").delete().eq("user_id", userId);
+  dbError(error);
+}
+
+export async function markEmailVerified(userId: string): Promise<UserRec | null> {
+  return updateUser(userId, { emailVerifiedAt: nowISO() });
 }

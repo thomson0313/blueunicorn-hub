@@ -3,6 +3,7 @@ import { getSession, type SessionPayload } from "./auth";
 import { connectDB } from "./db";
 import { findUserById } from "./repo";
 import { canMemberAccessPlatform, loginBlockMessage } from "./user-approval";
+import { EMAIL_NOT_VERIFIED_MESSAGE, isEmailVerified } from "./email-verification";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -10,8 +11,8 @@ export class HttpError extends Error {
   }
 }
 
-/** Returns the session or throws an HttpError(401). Members must be approved. */
-export async function requireUser(): Promise<SessionPayload> {
+/** Session + member approval; does not require verified email. */
+export async function requireSession(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) throw new HttpError(401, "Unauthorized");
 
@@ -24,6 +25,18 @@ export async function requireUser(): Promise<SessionPayload> {
     }
   }
 
+  return session;
+}
+
+/** Full access — session, approval, and verified email. */
+export async function requireUser(): Promise<SessionPayload> {
+  const session = await requireSession();
+  await connectDB();
+  const user = await findUserById(session.sub);
+  if (!user) throw new HttpError(401, "Unauthorized");
+  if (!isEmailVerified(user.emailVerifiedAt)) {
+    throw new HttpError(403, EMAIL_NOT_VERIFIED_MESSAGE);
+  }
   return session;
 }
 

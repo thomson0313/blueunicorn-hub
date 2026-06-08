@@ -21,7 +21,7 @@ export default function ChatPage() {
   }, []);
 
   if (loading) {
-    return <PanelLoader label="Loading chat..." />;
+    return <PanelLoader variant="chat" />;
   }
 
   return (

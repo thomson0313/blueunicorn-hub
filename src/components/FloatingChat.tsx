@@ -77,7 +77,7 @@ export function FloatingChat() {
             </div>
             <div className="flex-1 overflow-hidden p-3">
               {usersLoading ? (
-                <PanelLoader label="Loading members..." />
+                <PanelLoader variant="list" />
               ) : (
                 <ChatSidebarList
                   users={users}
