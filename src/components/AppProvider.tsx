@@ -13,6 +13,7 @@ type AppContextValue = {
   emailVerified: boolean;
   userEmail: string;
   setEmailVerified: (verified: boolean) => void;
+  setUserEmail: (email: string) => void;
   realtimeMode: RealtimeMode;
   socket: Socket | null;
   onlineUserIds: string[];
@@ -45,7 +46,7 @@ const HUB_NOTIF_POLL_MS = 5_000;
 export function AppProvider({
   user,
   emailVerified: initialEmailVerified,
-  userEmail,
+  userEmail: initialUserEmail,
   children,
 }: {
   user: SessionUser;
@@ -54,10 +55,15 @@ export function AppProvider({
   children: React.ReactNode;
 }) {
   const [emailVerified, setEmailVerified] = useState(initialEmailVerified);
+  const [userEmail, setUserEmail] = useState(initialUserEmail);
 
   useEffect(() => {
     setEmailVerified(initialEmailVerified);
   }, [initialEmailVerified]);
+
+  useEffect(() => {
+    setUserEmail(initialUserEmail);
+  }, [initialUserEmail]);
   const socketRef = useRef<Socket | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
@@ -308,6 +314,7 @@ export function AppProvider({
       emailVerified,
       userEmail,
       setEmailVerified,
+      setUserEmail,
       realtimeMode: REALTIME_MODE,
       socket,
       onlineUserIds,

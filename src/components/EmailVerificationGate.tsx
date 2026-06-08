@@ -7,7 +7,7 @@ import { EmailVerificationModal } from "@/components/EmailVerificationModal";
 import { LockedPlatformSkeleton } from "@/components/skeleton/LockedPlatformSkeleton";
 
 export function EmailVerificationGate({ children }: { children: React.ReactNode }) {
-  const { user, emailVerified, userEmail, setEmailVerified } = useApp();
+  const { user, emailVerified, userEmail, setEmailVerified, setUserEmail } = useApp();
   const [modalOpen, setModalOpen] = useState(false);
 
   return (
@@ -25,6 +25,7 @@ export function EmailVerificationGate({ children }: { children: React.ReactNode 
         email={userEmail}
         onClose={() => setModalOpen(false)}
         onVerified={() => setEmailVerified(true)}
+        onEmailChange={setUserEmail}
       />
     </>
   );
