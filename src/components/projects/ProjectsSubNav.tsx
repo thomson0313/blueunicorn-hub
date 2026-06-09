@@ -8,7 +8,7 @@ export function ProjectsSubNav({ mode }: { mode: "member" | "admin" }) {
   const base = mode === "admin" ? "/admin/projects" : "/projects";
 
   const tabs = [
-    { href: base, label: "All Projects" },
+    { href: base, label: "Active Projects" },
     { href: `${base}/archived`, label: "Archived Projects" },
   ];
 

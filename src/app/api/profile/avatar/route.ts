@@ -12,7 +12,6 @@ const EXT_BY_TYPE: Record<string, string> = {
   "image/gif": "gif",
 };
 
-// POST /api/profile/avatar -> upload a profile photo (multipart/form-data, field "file").
 export async function POST(req: Request) {
   try {
     const me = await requireUser();
@@ -30,6 +29,18 @@ export async function POST(req: Request) {
     const user = await updateUser(me.sub, { avatarUrl });
     if (!user) throw new HttpError(404, "User not found");
 
+    return NextResponse.json({ profile: await publicUser(user) });
+  } catch (err) {
+    return handleError(err);
+  }
+}
+
+export async function DELETE() {
+  try {
+    const me = await requireUser();
+    await connectDB();
+    const user = await updateUser(me.sub, { avatarUrl: null });
+    if (!user) throw new HttpError(404, "User not found");
     return NextResponse.json({ profile: await publicUser(user) });
   } catch (err) {
     return handleError(err);

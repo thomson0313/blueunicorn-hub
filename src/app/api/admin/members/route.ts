@@ -5,6 +5,7 @@ import { listUsers, createUser, emailOrUsernameTaken, projectCountsByOwner, publ
 import { requireAdmin, handleError } from "@/lib/api-guard";
 import { hashPassword } from "@/lib/auth";
 import { isEmailVerified } from "@/lib/email-verification";
+import { isTotpEnabled } from "@/lib/totp";
 
 // GET /api/admin/members -> all users with their project counts.
 export async function GET() {
@@ -28,6 +29,7 @@ export async function GET() {
           fieldName: pub.fieldName,
           approvalStatus: u.approvalStatus,
           emailVerified: isEmailVerified(u.emailVerifiedAt),
+          totpEnabled: isTotpEnabled(u.totpEnabledAt),
           createdAt: u.createdAt,
           projectCount: counts.get(u._id) || 0,
         };

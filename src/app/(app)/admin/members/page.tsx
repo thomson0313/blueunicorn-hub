@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Avatar } from "@/components/Avatar";
+import { EmailVerifiedBadge } from "@/components/EmailVerifiedBadge";
+import { TwoFactorAvatarBadge } from "@/components/TwoFactorAvatarBadge";
 import { PanelLoader } from "@/components/PanelLoader";
 import type { MemberField } from "@/lib/types";
 import type { ApprovalStatus } from "@/lib/user-approval";
@@ -18,35 +20,9 @@ type Member = {
   fieldName?: string | null;
   approvalStatus?: ApprovalStatus;
   emailVerified?: boolean;
+  totpEnabled?: boolean;
   projectCount?: number;
 };
-
-function EmailVerificationBadge({ verified }: { verified: boolean }) {
-  if (verified) {
-    return (
-      <span
-        className="absolute -bottom-0.5 -left-0.5 w-4 h-4 rounded-full bg-green-500 border-2 border-white flex items-center justify-center shadow-sm"
-        title="Email verified"
-      >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-          <path d="M5 13l4 4L19 7" />
-        </svg>
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className="absolute -bottom-0.5 -left-0.5 w-4 h-4 rounded-full bg-amber-400 border-2 border-white flex items-center justify-center shadow-sm"
-      title="Email not verified"
-    >
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </svg>
-    </span>
-  );
-}
 
 export default function AdminMembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
@@ -194,14 +170,17 @@ export default function AdminMembersPage() {
                       <a href={`/u/${m._id}`} className="flex items-center gap-2 hover:text-brand-600">
                         <span className="relative shrink-0">
                           <Avatar name={m.name} src={m.avatarUrl} size={32} />
-                          <EmailVerificationBadge verified={!!m.emailVerified} />
+                          <TwoFactorAvatarBadge enabled={!!m.totpEnabled} />
                         </span>
                         <span className="hover:underline">{m.name}</span>
                       </a>
                     </td>
                     <td className="px-5 py-3 text-slate-500">
                       {m.username ? <span className="text-slate-700">@{m.username}</span> : null}
-                      <div className="text-xs text-slate-400">{m.email}</div>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="text-xs text-slate-400">{m.email}</span>
+                        <EmailVerifiedBadge verified={!!m.emailVerified} compact />
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       <select

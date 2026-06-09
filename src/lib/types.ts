@@ -23,6 +23,7 @@ export type PublicUser = {
   bio?: string;
   fieldId?: string | null;
   fieldName?: string | null;
+  emailVerified?: boolean;
 };
 
 export type Profile = {
@@ -36,6 +37,7 @@ export type Profile = {
   bio: string;
   fieldId: string | null;
   fieldName: string | null;
+  emailVerified: boolean;
 };
 
 export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived";
@@ -62,6 +64,7 @@ export type Project = {
   budgetType: BudgetType;
   budgetCurrency: string;
   budgetAmount: string;
+  estimatedHours: number;
   timeline: string;
   previewLink: string;
   githubLink: string;

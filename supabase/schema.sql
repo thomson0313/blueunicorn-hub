@@ -83,6 +83,7 @@ create table if not exists projects (
   budget_type text not null default 'fixed' check (budget_type in ('hourly', 'fixed')),
   budget_currency text not null default 'USD',
   budget_amount text not null default '',
+  estimated_hours numeric(10, 2) not null default 0 check (estimated_hours >= 0),
   timeline text not null default '',
   preview_link text not null default '',
   github_link text not null default '',

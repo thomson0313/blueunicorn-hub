@@ -18,7 +18,7 @@ export function NavBar() {
   ];
 
   const projectSubLinks = [
-    { href: "/projects", label: "All Projects" },
+    { href: "/projects", label: "Active Projects" },
     { href: "/projects/archived", label: "Archived" },
   ];
 

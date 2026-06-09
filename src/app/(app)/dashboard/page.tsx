@@ -26,6 +26,10 @@ import {
   IconStatScore,
   IconStatUrgent,
 } from "@/components/icons/DashboardIcons";
+import {
+  formatBudgetFinancialSummary,
+  summarizeBudgetFinancials,
+} from "@/lib/project-budget-financials";
 import type { Project as ProjectType, PublicUser } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +44,7 @@ export default async function DashboardPage() {
     const allProjects = (await listProjectsByOwner(session.sub)) as unknown as ProjectType[];
     const projects = activeProjects(allProjects);
     const summary = summarizeProjects(allProjects);
+    const budgetSummary = summarizeBudgetFinancials(projects);
     const dailyScore = userDailyScore(allProjects);
 
     return (
@@ -56,13 +61,13 @@ export default async function DashboardPage() {
             href="/projects"
             className="text-sm font-medium text-brand-600 hover:underline shrink-0"
           >
-            View all projects →
+            View active projects →
           </Link>
         </div>
 
         <DashboardSearch isAdmin={false} />
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
           <DashboardStatCard
             label="Today's score"
             value={`${dailyScore}%`}
@@ -85,6 +90,12 @@ export default async function DashboardPage() {
             value={String(summary.completed)}
             accent="emerald"
             icon={<IconStatCompleted />}
+          />
+          <DashboardStatCard
+            label="Budget"
+            value={formatBudgetFinancialSummary(budgetSummary)}
+            hint="Estimated / earned"
+            icon={<IconStatFixed />}
           />
           <DashboardStatCard
             label={summary.hourlyCount > 0 ? "Hours logged" : "Avg. completion"}
@@ -148,6 +159,7 @@ export default async function DashboardPage() {
   ) as unknown as PublicUser[];
   const allProjects = (await listAllProjects()) as unknown as ProjectType[];
   const teamSummary = summarizeProjects(allProjects);
+  const teamBudgetSummary = summarizeBudgetFinancials(activeProjects(allProjects));
   const byOwner = groupProjectsByOwner(allProjects);
   const teamMembers = memberSummaries(members, byOwner);
   const memberCount = members.filter((m) => m.role === "member").length;
@@ -208,7 +220,13 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <DashboardStatCard
+          label="Budget"
+          value={formatBudgetFinancialSummary(teamBudgetSummary)}
+          hint="Estimated / earned"
+          icon={<IconStatFixed />}
+        />
         <DashboardStatCard
           label="Hourly projects"
           value={String(teamSummary.hourlyCount)}

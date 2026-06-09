@@ -16,6 +16,7 @@ export type ProjectFormState = {
   budgetType: BudgetType;
   budgetCurrency: BudgetCurrencyCode;
   budgetAmount: string;
+  estimatedHours: string;
   timeline: string;
   previewLink: string;
   githubLink: string;
@@ -115,7 +116,7 @@ export function ProjectFormFields({
           </label>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className={`grid gap-3 ${form.budgetType === "hourly" ? "grid-cols-3" : "grid-cols-2"}`}>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Budget</label>
           <BudgetAmountInput
@@ -125,6 +126,20 @@ export function ProjectFormFields({
             onAmountChange={(budgetAmount) => onChange({ budgetAmount })}
           />
         </div>
+        {form.budgetType === "hourly" && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Estimated hours</label>
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              value={form.estimatedHours}
+              onChange={(e) => onChange({ estimatedHours: e.target.value })}
+              className={INPUT_CLASS}
+              placeholder="e.g. 40"
+            />
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Due date</label>
           <input

@@ -94,6 +94,7 @@ export async function POST(req: Request) {
       budgetType: budget.budgetType,
       budgetCurrency: budget.budgetCurrency,
       budgetAmount: budget.budgetAmount,
+      estimatedHours: parsed.data.estimatedHours ?? 0,
       timeline: parsed.data.timeline,
       previewLink: parsed.data.previewLink || "",
       githubLink: parsed.data.githubLink || "",

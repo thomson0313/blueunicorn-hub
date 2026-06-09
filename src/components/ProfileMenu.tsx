@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
+import { EmailVerifiedBadge } from "@/components/EmailVerifiedBadge";
 import { useApp } from "@/components/AppProvider";
 import type { Profile } from "@/lib/types";
 
@@ -43,7 +44,10 @@ function ProfilePopup({
           <p className="font-semibold text-slate-900 truncate">{user.name}</p>
           <RoleBadge role={user.role} />
         </div>
-        <p className="text-xs text-slate-500 truncate mt-1">{profile?.email ?? user.email}</p>
+        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+          <p className="text-xs text-slate-500 truncate">{profile?.email ?? user.email}</p>
+          {profile && <EmailVerifiedBadge verified={profile.emailVerified} compact />}
+        </div>
         {profile?.username && <p className="text-xs text-slate-500 mt-0.5">@{profile.username}</p>}
         {profile?.fieldName && (
           <span className="inline-block mt-2 text-[10px] px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-medium">
@@ -156,7 +160,10 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
               <p className="font-semibold text-slate-900 truncate">{user.name}</p>
               <RoleBadge role={user.role} />
             </div>
-            <p className="text-xs text-slate-500 truncate mt-1">{profile?.email ?? user.email}</p>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+              <p className="text-xs text-slate-500 truncate">{profile?.email ?? user.email}</p>
+              {profile && <EmailVerifiedBadge verified={profile.emailVerified} compact />}
+            </div>
             {profile?.username && <p className="text-xs text-slate-500 mt-0.5">@{profile.username}</p>}
             {profile?.fieldName && (
               <span className="inline-block mt-2 text-[10px] px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-medium">

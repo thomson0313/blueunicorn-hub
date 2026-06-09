@@ -15,6 +15,7 @@ import { ProjectLinkIcons, displayProjectBudget } from "@/components/projects/Pr
 import { ProjectTimeHeatmap } from "@/components/projects/ProjectTimeHeatmap";
 import { formatHours } from "@/lib/project-time-heatmap";
 import { budgetFieldsFromProject } from "@/lib/project-budget";
+import { formatHourlyEstimation } from "@/lib/project-budget-financials";
 import { ProjectTimelineDisplay } from "@/components/projects/ProjectTimelineDisplay";
 import type { MemberOption } from "@/components/projects/MemberAssignSelect";
 import { isProjectUrgent } from "@/lib/project-timeline";
@@ -53,6 +54,7 @@ const emptyForm = (): ProjectFormState => ({
   budgetType: "fixed",
   budgetCurrency: "USD",
   budgetAmount: "",
+  estimatedHours: "",
   timeline: "",
   previewLink: "",
   githubLink: "",
@@ -65,6 +67,7 @@ function budgetPayload(form: ProjectFormState) {
     budgetType: form.budgetType,
     budgetCurrency: form.budgetCurrency,
     budgetAmount: form.budgetAmount,
+    estimatedHours: form.budgetType === "hourly" ? parseFloat(form.estimatedHours) || 0 : 0,
   };
 }
 
@@ -217,6 +220,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         description: p.description,
         fieldId: p.fieldId || "",
         ...budget,
+        estimatedHours: p.estimatedHours ? String(p.estimatedHours) : "",
         timeline: p.timeline,
         previewLink: p.previewLink || "",
         githubLink: p.githubLink || "",
@@ -254,7 +258,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
   const title = isArchivedView
     ? "Archived projects"
     : isAdmin
-      ? "All Projects"
+      ? "Active Projects"
       : "My Projects";
   const subtitle = isArchivedView
     ? "Restore archived projects to move them back to your active list."
@@ -276,6 +280,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       description: p.description,
       fieldId: p.fieldId || "",
       ...budget,
+      estimatedHours: p.estimatedHours ? String(p.estimatedHours) : "",
       timeline: p.timeline,
       previewLink: p.previewLink || "",
       githubLink: p.githubLink || "",
@@ -580,6 +585,9 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         {p.description && <p className="text-sm text-slate-500 mt-2 line-clamp-2">{p.description}</p>}
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
           <span className="text-slate-500">Budget: {displayProjectBudget(p)}</span>
+          {p.budgetType === "hourly" && formatHourlyEstimation(p) && (
+            <span className="text-slate-500">{formatHourlyEstimation(p)}</span>
+          )}
           <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
         </div>
         {p.budgetType === "hourly" ? (
@@ -641,6 +649,9 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs mt-1">
             <span className="text-slate-500">Budget: {displayProjectBudget(p)}</span>
+            {p.budgetType === "hourly" && formatHourlyEstimation(p) && (
+              <span className="text-slate-500">{formatHourlyEstimation(p)}</span>
+            )}
             <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
             <span className="text-slate-400">{timeAgo(p.createdAt)}</span>
           </div>
@@ -679,7 +690,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           href={activeProjectsHref}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:underline"
         >
-          ← Back to all projects
+          ← Back to active projects
         </Link>
       )}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -832,7 +843,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
               href={activeProjectsHref}
               className="inline-block bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 transition"
             >
-              View all projects
+              View active projects
             </Link>
           ) : (
             <button

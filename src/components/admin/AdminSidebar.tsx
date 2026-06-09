@@ -20,7 +20,7 @@ import {
 type NavItem = { href: string; label: string; icon: ReactNode };
 
 const PROJECT_SUB_LINKS = [
-  { href: "/admin/projects", label: "All Projects" },
+  { href: "/admin/projects", label: "Active Projects" },
   { href: "/admin/projects/archived", label: "Archived Projects" },
 ];
 

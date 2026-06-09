@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
 import type { ApprovalStatus } from "./user-approval";
+import { isEmailVerified } from "./email-verification";
 
 export type Role = "admin" | "member";
 
@@ -43,6 +44,7 @@ export interface ProjectRec {
   budgetType: "hourly" | "fixed";
   budgetCurrency: string;
   budgetAmount: string;
+  estimatedHours: number;
   timeline: string;
   previewLink: string;
   githubLink: string;
@@ -131,6 +133,7 @@ type ProjectRow = {
   budget_type?: string;
   budget_currency?: string;
   budget_amount?: string;
+  estimated_hours?: number | string;
   timeline: string;
   preview_link?: string;
   github_link?: string;
@@ -254,6 +257,7 @@ function toProjectRec(row: ProjectRow): ProjectRec {
     budgetType: row.budget_type === "hourly" ? "hourly" : "fixed",
     budgetCurrency: row.budget_currency ?? "USD",
     budgetAmount: row.budget_amount ?? "",
+    estimatedHours: Number(row.estimated_hours ?? 0) || 0,
     timeline: row.timeline ?? "",
     previewLink: row.preview_link ?? "",
     githubLink: row.github_link ?? "",
@@ -325,6 +329,7 @@ export type PublicUser = {
   bio: string;
   fieldId: string | null;
   fieldName: string | null;
+  emailVerified: boolean;
 };
 
 const fieldNameCache = new Map<string, string>();
@@ -349,6 +354,7 @@ function stubPublicUser(id: string, name = "Unknown"): PublicUser {
     bio: "",
     fieldId: null,
     fieldName: null,
+    emailVerified: false,
   };
 }
 
@@ -364,6 +370,7 @@ export async function publicUser(u: UserRec): Promise<PublicUser> {
     bio: u.bio ?? "",
     fieldId: u.fieldId ?? null,
     fieldName: await getFieldName(u.fieldId),
+    emailVerified: isEmailVerified(u.emailVerifiedAt),
   };
 }
 
@@ -623,6 +630,7 @@ export async function createProject(data: {
   budgetType?: "hourly" | "fixed";
   budgetCurrency?: string;
   budgetAmount?: string;
+  estimatedHours?: number;
   timeline?: string;
   previewLink?: string;
   githubLink?: string;
@@ -640,6 +648,7 @@ export async function createProject(data: {
     budget_type: data.budgetType ?? "fixed",
     budget_currency: data.budgetCurrency ?? "USD",
     budget_amount: data.budgetAmount ?? "",
+    estimated_hours: data.estimatedHours ?? 0,
     timeline: data.timeline ?? "",
     preview_link: data.previewLink ?? "",
     github_link: data.githubLink ?? "",
@@ -666,6 +675,7 @@ export async function updateProject(
       | "budgetType"
       | "budgetCurrency"
       | "budgetAmount"
+      | "estimatedHours"
       | "timeline"
       | "previewLink"
       | "githubLink"
@@ -683,6 +693,7 @@ export async function updateProject(
   if (patch.budgetType !== undefined) payload.budget_type = patch.budgetType;
   if (patch.budgetCurrency !== undefined) payload.budget_currency = patch.budgetCurrency;
   if (patch.budgetAmount !== undefined) payload.budget_amount = patch.budgetAmount;
+  if (patch.estimatedHours !== undefined) payload.estimated_hours = patch.estimatedHours;
   if (patch.timeline !== undefined) payload.timeline = patch.timeline;
   if (patch.previewLink !== undefined) payload.preview_link = patch.previewLink;
   if (patch.githubLink !== undefined) payload.github_link = patch.githubLink;

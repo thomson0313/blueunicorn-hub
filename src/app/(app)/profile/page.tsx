@@ -10,6 +10,7 @@ import { PasswordInput } from "@/components/PasswordInput";
 import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
 import { SkillsTagInput, parseSkillsString, skillsToString } from "@/components/profile/SkillsTagInput";
 import { TwoFactorSetup } from "@/components/profile/TwoFactorSetup";
+import { EmailVerifiedBadge } from "@/components/EmailVerifiedBadge";
 import { useApp } from "@/components/AppProvider";
 import type { MemberField, Profile } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
   const [error, setError] = useState("");
 
   const [cropFile, setCropFile] = useState<File | null>(null);
@@ -146,6 +148,25 @@ export default function ProfilePage() {
     e.target.value = "";
   }
 
+  async function removePhoto() {
+    if (!profile?.avatarUrl || removingPhoto) return;
+    setRemovingPhoto(true);
+    setError("");
+    try {
+      const res = await fetch("/api/profile/avatar", { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not remove photo");
+        return;
+      }
+      setProfile(data.profile);
+      setAvatarUrl(null);
+      router.refresh();
+    } finally {
+      setRemovingPhoto(false);
+    }
+  }
+
   async function uploadCropped(blob: Blob) {
     setCropOpen(false);
     setCropFile(null);
@@ -179,7 +200,35 @@ export default function ProfilePage() {
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <div className="flex items-center gap-5">
-          <Avatar name={profile.name} src={profile.avatarUrl} size={88} bordered />
+          <div className="relative group shrink-0">
+            <Avatar name={profile.name} src={profile.avatarUrl} size={88} bordered />
+            {profile.avatarUrl && (
+              <button
+                type="button"
+                onClick={() => void removePhoto()}
+                disabled={removingPhoto || uploading}
+                title="Remove photo"
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed"
+              >
+                <svg
+                  width="28"
+                  height="28"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 6h18" />
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                </svg>
+              </button>
+            )}
+          </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold text-slate-900">{profile.name}</h2>
@@ -214,13 +263,16 @@ export default function ProfilePage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className={inputClass}
-          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className={`${inputClass} flex-1 min-w-[12rem]`}
+            />
+            <EmailVerifiedBadge verified={profile.emailVerified} />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
