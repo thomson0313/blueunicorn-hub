@@ -14,6 +14,8 @@ type AppContextValue = {
   userEmail: string;
   setEmailVerified: (verified: boolean) => void;
   setUserEmail: (email: string) => void;
+  totpEnabled: boolean;
+  setTotpEnabled: (enabled: boolean) => void;
   realtimeMode: RealtimeMode;
   socket: Socket | null;
   onlineUserIds: string[];
@@ -47,15 +49,18 @@ export function AppProvider({
   user,
   emailVerified: initialEmailVerified,
   userEmail: initialUserEmail,
+  totpEnabled: initialTotpEnabled,
   children,
 }: {
   user: SessionUser;
   emailVerified: boolean;
   userEmail: string;
+  totpEnabled: boolean;
   children: React.ReactNode;
 }) {
   const [emailVerified, setEmailVerified] = useState(initialEmailVerified);
   const [userEmail, setUserEmail] = useState(initialUserEmail);
+  const [totpEnabled, setTotpEnabled] = useState(initialTotpEnabled);
 
   useEffect(() => {
     setEmailVerified(initialEmailVerified);
@@ -64,6 +69,10 @@ export function AppProvider({
   useEffect(() => {
     setUserEmail(initialUserEmail);
   }, [initialUserEmail]);
+
+  useEffect(() => {
+    setTotpEnabled(initialTotpEnabled);
+  }, [initialTotpEnabled]);
   const socketRef = useRef<Socket | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
@@ -314,6 +323,8 @@ export function AppProvider({
       userEmail,
       setEmailVerified,
       setUserEmail,
+      totpEnabled,
+      setTotpEnabled,
       realtimeMode: REALTIME_MODE,
       socket,
       onlineUserIds,
@@ -332,6 +343,7 @@ export function AppProvider({
       user,
       emailVerified,
       userEmail,
+      totpEnabled,
       socket,
       onlineUserIds,
       alerts,

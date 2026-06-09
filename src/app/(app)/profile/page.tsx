@@ -9,6 +9,7 @@ import { RequiredLabel } from "@/components/RequiredLabel";
 import { PasswordInput } from "@/components/PasswordInput";
 import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
 import { SkillsTagInput, parseSkillsString, skillsToString } from "@/components/profile/SkillsTagInput";
+import { TwoFactorSetup } from "@/components/profile/TwoFactorSetup";
 import { useApp } from "@/components/AppProvider";
 import type { MemberField, Profile } from "@/lib/types";
 
@@ -305,6 +306,8 @@ export default function ProfilePage() {
           Update password
         </ActionButton>
       </form>
+
+      <TwoFactorSetup />
 
       <AvatarCropModal
         open={cropOpen}

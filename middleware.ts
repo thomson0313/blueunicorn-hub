@@ -41,7 +41,9 @@ export async function middleware(req: NextRequest) {
   if (!isPublic && !session) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    if (pathname !== "/") {
+    if (req.cookies.get(COOKIE_NAME)?.value) {
+      url.searchParams.set("reason", "session_expired");
+    } else if (pathname !== "/") {
       url.searchParams.set("next", pathname);
     }
     return NextResponse.redirect(url);

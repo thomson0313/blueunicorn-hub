@@ -18,6 +18,8 @@ export interface UserRec {
   fieldId?: string | null;
   approvalStatus: ApprovalStatus;
   emailVerifiedAt?: string | null;
+  totpSecret?: string | null;
+  totpEnabledAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -106,6 +108,8 @@ type UserRow = {
   bio?: string;
   plan?: string;
   email_verified_at?: string | null;
+  totp_secret?: string | null;
+  totp_enabled_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -210,6 +214,8 @@ function toUserRec(row: UserRow): UserRec {
       ? row.approval_status
       : "pending") as ApprovalStatus,
     emailVerifiedAt: row.email_verified_at ?? null,
+    totpSecret: row.totp_secret ?? null,
+    totpEnabledAt: row.totp_enabled_at ?? null,
     fieldId: row.field_id ?? null,
     avatarUrl: row.avatar_url,
     skills: row.skills ?? "",
@@ -488,6 +494,8 @@ export async function updateUser(
       | "fieldId"
       | "approvalStatus"
       | "emailVerifiedAt"
+      | "totpSecret"
+      | "totpEnabledAt"
     >
   >
 ): Promise<UserRec | null> {
@@ -499,6 +507,8 @@ export async function updateUser(
   if (patch.role !== undefined) payload.role = patch.role;
   if (patch.approvalStatus !== undefined) payload.approval_status = patch.approvalStatus;
   if (patch.emailVerifiedAt !== undefined) payload.email_verified_at = patch.emailVerifiedAt;
+  if (patch.totpSecret !== undefined) payload.totp_secret = patch.totpSecret;
+  if (patch.totpEnabledAt !== undefined) payload.totp_enabled_at = patch.totpEnabledAt;
   if (patch.passwordHash !== undefined) payload.password_hash = patch.passwordHash;
   if (patch.avatarUrl !== undefined) payload.avatar_url = patch.avatarUrl;
   if (patch.skills !== undefined) payload.skills = patch.skills;
@@ -1383,4 +1393,77 @@ export async function deleteEmailVerificationCodes(userId: string): Promise<void
 
 export async function markEmailVerified(userId: string): Promise<UserRec | null> {
   return updateUser(userId, { emailVerifiedAt: nowISO() });
+}
+
+/* ----------------------- 2FA & devices ----------------------- */
+
+export async function recordKnownDevice(
+  userId: string,
+  device: { deviceHash: string; browser: string; os: string; ip: string; country: string }
+): Promise<{ isNew: boolean }> {
+  const { data: existing, error: findErr } = await getSupabase()
+    .from("user_known_devices")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("device_hash", device.deviceHash)
+    .maybeSingle();
+  dbError(findErr);
+
+  if (existing) {
+    const { error } = await getSupabase()
+      .from("user_known_devices")
+      .update({
+        browser: device.browser,
+        os: device.os,
+        last_ip: device.ip,
+        last_country: device.country,
+        last_seen_at: nowISO(),
+      })
+      .eq("id", (existing as { id: string }).id);
+    dbError(error);
+    return { isNew: false };
+  }
+
+  const { error } = await getSupabase().from("user_known_devices").insert({
+    id: newId(),
+    user_id: userId,
+    device_hash: device.deviceHash,
+    browser: device.browser,
+    os: device.os,
+    last_ip: device.ip,
+    last_country: device.country,
+  });
+  dbError(error);
+  return { isNew: true };
+}
+
+export async function isTrusted2faDevice(userId: string, deviceHash: string): Promise<boolean> {
+  const { data, error } = await getSupabase()
+    .from("trusted_2fa_devices")
+    .select("id, expires_at")
+    .eq("user_id", userId)
+    .eq("device_hash", deviceHash)
+    .maybeSingle();
+  dbError(error);
+  if (!data) return false;
+  const row = data as { expires_at: string };
+  return new Date(row.expires_at).getTime() > Date.now();
+}
+
+export async function upsertTrusted2faDevice(
+  userId: string,
+  device: { deviceHash: string; deviceLabel: string; browser: string; os: string },
+  expiresAt: string
+): Promise<void> {
+  await getSupabase().from("trusted_2fa_devices").delete().eq("user_id", userId).eq("device_hash", device.deviceHash);
+  const { error } = await getSupabase().from("trusted_2fa_devices").insert({
+    id: newId(),
+    user_id: userId,
+    device_hash: device.deviceHash,
+    device_label: device.deviceLabel,
+    browser: device.browser,
+    os: device.os,
+    expires_at: expiresAt,
+  });
+  dbError(error);
 }

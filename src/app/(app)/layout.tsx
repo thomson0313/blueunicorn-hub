@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { findUserById } from "@/lib/repo";
 import { canMemberAccessPlatform } from "@/lib/user-approval";
 import { isEmailVerified } from "@/lib/email-verification";
+import { isTotpEnabled } from "@/lib/totp";
 import { AppProvider } from "@/components/AppProvider";
 import { AppChrome } from "@/components/AppChrome";
 import { EmailVerificationGate } from "@/components/EmailVerificationGate";
@@ -28,6 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       user={session}
       emailVerified={isEmailVerified(user.emailVerifiedAt)}
       userEmail={user.email}
+      totpEnabled={isTotpEnabled(user.totpEnabledAt)}
     >
       <EmailVerificationGate>
         <AppChrome>{children}</AppChrome>
