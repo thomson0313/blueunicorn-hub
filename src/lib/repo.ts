@@ -32,7 +32,7 @@ export interface MemberFieldRec {
   createdAt: string;
 }
 
-export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived";
+export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived" | "upcoming";
 
 export interface ProjectRec {
   _id: string;
@@ -564,6 +564,7 @@ export type ProjectListFilters = {
   fieldId?: string;
   status?: ProjectStatus;
   excludeStatus?: ProjectStatus;
+  excludeStatuses?: ProjectStatus[];
 };
 
 export async function listProjects(
@@ -574,7 +575,13 @@ export async function listProjects(
   if (filters.ownerId) query = query.eq("owner", filters.ownerId);
   if (filters.fieldId) query = query.eq("field_id", filters.fieldId);
   if (filters.status) query = query.eq("status", filters.status);
-  if (filters.excludeStatus) query = query.neq("status", filters.excludeStatus);
+  if (filters.excludeStatuses?.length) {
+    for (const excluded of filters.excludeStatuses) {
+      query = query.neq("status", excluded);
+    }
+  } else if (filters.excludeStatus) {
+    query = query.neq("status", filters.excludeStatus);
+  }
 
   const { data, error } = await query;
   dbError(error);

@@ -34,6 +34,7 @@ export function ProjectFormFields({
   members,
   showAssign,
   showProgress,
+  showLinks = true,
   projectId,
   projectCreatedAt,
   savedBudgetType,
@@ -47,6 +48,7 @@ export function ProjectFormFields({
   members: MemberOption[];
   showAssign: boolean;
   showProgress: boolean;
+  showLinks?: boolean;
   projectId?: string;
   projectCreatedAt?: string;
   savedBudgetType?: BudgetType;
@@ -150,24 +152,28 @@ export function ProjectFormFields({
           />
         </div>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Preview link</label>
-        <input
-          value={form.previewLink}
-          onChange={(e) => onChange({ previewLink: e.target.value })}
-          className={INPUT_CLASS}
-          placeholder="https://..."
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">GitHub repository</label>
-        <input
-          value={form.githubLink}
-          onChange={(e) => onChange({ githubLink: e.target.value })}
-          className={INPUT_CLASS}
-          placeholder="https://github.com/..."
-        />
-      </div>
+      {showLinks && (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Preview link</label>
+            <input
+              value={form.previewLink}
+              onChange={(e) => onChange({ previewLink: e.target.value })}
+              className={INPUT_CLASS}
+              placeholder="https://..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">GitHub repository</label>
+            <input
+              value={form.githubLink}
+              onChange={(e) => onChange({ githubLink: e.target.value })}
+              className={INPUT_CLASS}
+              placeholder="https://github.com/..."
+            />
+          </div>
+        </>
+      )}
       {showAssign && (
         <div>
           <RequiredLabel>Assign to</RequiredLabel>

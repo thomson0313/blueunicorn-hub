@@ -40,7 +40,7 @@ export type Profile = {
   emailVerified: boolean;
 };
 
-export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived";
+export type ProjectStatus = "in_progress" | "completed" | "canceled" | "archived" | "upcoming";
 
 export type BudgetType = "hourly" | "fixed";
 

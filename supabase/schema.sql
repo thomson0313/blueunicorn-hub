@@ -89,7 +89,7 @@ create table if not exists projects (
   github_link text not null default '',
   completion_rate integer not null default 0 check (completion_rate >= 0 and completion_rate <= 100),
   status text not null default 'in_progress'
-    check (status in ('in_progress', 'completed', 'canceled', 'archived')),
+    check (status in ('in_progress', 'completed', 'canceled', 'archived', 'upcoming')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

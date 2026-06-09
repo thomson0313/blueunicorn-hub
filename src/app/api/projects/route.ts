@@ -7,7 +7,7 @@ import { requireUser, handleError, HttpError } from "@/lib/api-guard";
 import { budgetFieldsSchema, applyBudgetToPatch } from "@/lib/project-budget-api";
 import { buildBudgetPatch } from "@/lib/project-budget";
 
-const statusEnum = z.enum(["in_progress", "completed", "canceled", "archived"]);
+const statusEnum = z.enum(["in_progress", "completed", "canceled", "archived", "upcoming"]);
 
 const createSchema = z
   .object({
@@ -18,6 +18,7 @@ const createSchema = z
     previewLink: z.string().max(500).optional().default(""),
     githubLink: z.string().max(500).optional().default(""),
     assignTo: z.string().uuid().optional(),
+    status: statusEnum.optional(),
   })
   .merge(budgetFieldsSchema);
 
@@ -38,11 +39,20 @@ export async function GET(req: Request) {
     }
 
     const excludeArchived = searchParams.get("excludeArchived") === "true";
+    const excludeUpcoming = searchParams.get("excludeUpcoming") === "true";
+
+    let excludeStatuses: ProjectStatus[] | undefined;
+    if (!status) {
+      const excluded: ProjectStatus[] = [];
+      if (excludeArchived) excluded.push("archived");
+      if (excludeUpcoming) excluded.push("upcoming");
+      if (excluded.length > 0) excludeStatuses = excluded;
+    }
 
     const filters = {
       fieldId: fieldId && fieldId !== "all" ? fieldId : undefined,
       status,
-      excludeStatus: excludeArchived && !status ? ("archived" as ProjectStatus) : undefined,
+      excludeStatuses,
       ownerId:
         user.role === "admin"
           ? ownerIdParam && ownerIdParam !== "all"
@@ -85,6 +95,8 @@ export async function POST(req: Request) {
       budgetAmount: parsed.data.budgetAmount,
     });
 
+    const isUpcoming = parsed.data.status === "upcoming";
+
     const project = await createProject({
       owner: ownerId,
       fieldId: parsed.data.fieldId,
@@ -96,8 +108,9 @@ export async function POST(req: Request) {
       budgetAmount: budget.budgetAmount,
       estimatedHours: parsed.data.estimatedHours ?? 0,
       timeline: parsed.data.timeline,
-      previewLink: parsed.data.previewLink || "",
-      githubLink: parsed.data.githubLink || "",
+      previewLink: isUpcoming ? "" : parsed.data.previewLink || "",
+      githubLink: isUpcoming ? "" : parsed.data.githubLink || "",
+      status: parsed.data.status,
     });
 
     return NextResponse.json({ project }, { status: 201 });

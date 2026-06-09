@@ -18,7 +18,8 @@ export function NavBar() {
   ];
 
   const projectSubLinks = [
-    { href: "/projects", label: "Active Projects" },
+    { href: "/projects", label: "Active Projects", exact: true },
+    { href: "/projects/upcoming", label: "Upcoming" },
     { href: "/projects/archived", label: "Archived" },
   ];
 
@@ -82,7 +83,9 @@ export function NavBar() {
         })}
         {onProjectsSection &&
           projectSubLinks.map((l) => {
-            const active = pathname === l.href;
+            const active = l.exact
+              ? pathname === l.href
+              : pathname === l.href || pathname.startsWith(`${l.href}/`);
             return (
               <Link key={l.href} href={l.href} className={`${linkClass(active)} text-xs`}>
                 {l.label}
@@ -94,7 +97,9 @@ export function NavBar() {
         <div className="hidden md:flex bg-brand-700/30 px-4 py-1.5 gap-1 border-t border-white/10">
           <div className="max-w-6xl mx-auto w-full flex items-center gap-1">
             {projectSubLinks.map((l) => {
-              const active = pathname === l.href;
+              const active = l.exact
+                ? pathname === l.href
+                : pathname === l.href || pathname.startsWith(`${l.href}/`);
               return (
                 <Link key={l.href} href={l.href} className={`${linkClass(active)} text-xs`}>
                   {l.label}

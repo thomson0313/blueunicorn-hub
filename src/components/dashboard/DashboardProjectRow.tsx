@@ -32,7 +32,7 @@ export function DashboardProjectRow({
             >
               {p.title}
             </Link>
-            <ProjectStatusBadge status={p.status} />
+            <ProjectStatusBadge status={p.status} project={p} />
             {p.budgetType === "hourly" && (
               <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
                 Hourly

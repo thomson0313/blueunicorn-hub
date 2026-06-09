@@ -8,17 +8,17 @@ export function ProjectsSubNav({ mode }: { mode: "member" | "admin" }) {
   const base = mode === "admin" ? "/admin/projects" : "/projects";
 
   const tabs = [
-    { href: base, label: "Active Projects" },
+    { href: base, label: "Active Projects", exact: true },
+    { href: `${base}/upcoming`, label: "Upcoming Projects" },
     { href: `${base}/archived`, label: "Archived Projects" },
   ];
 
   return (
     <nav className="flex flex-wrap gap-1 p-1 bg-slate-100 rounded-xl w-fit">
       {tabs.map((tab) => {
-        const active =
-          tab.href === base
-            ? pathname === base
-            : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+        const active = tab.exact
+          ? pathname === tab.href
+          : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         return (
           <Link
             key={tab.href}

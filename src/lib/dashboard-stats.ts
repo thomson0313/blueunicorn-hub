@@ -8,7 +8,7 @@ export function projectOwnerId(owner: Project["owner"]): string {
 }
 
 export function activeProjects(projects: Project[]): Project[] {
-  return projects.filter((p) => p.status !== "archived");
+  return projects.filter((p) => p.status !== "archived" && p.status !== "upcoming");
 }
 
 export function avg(nums: number[]): number {

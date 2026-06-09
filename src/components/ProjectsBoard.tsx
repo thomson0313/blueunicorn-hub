@@ -18,6 +18,7 @@ import { budgetFieldsFromProject } from "@/lib/project-budget";
 import { formatHourlyEstimation } from "@/lib/project-budget-financials";
 import { ProjectTimelineDisplay } from "@/components/projects/ProjectTimelineDisplay";
 import type { MemberOption } from "@/components/projects/MemberAssignSelect";
+import { isProjectNew } from "@/lib/project-rules";
 import { isProjectUrgent } from "@/lib/project-timeline";
 import { sortProjects, type ProjectSortKey } from "@/lib/project-sort";
 import { timeAgo } from "@/lib/time-ago";
@@ -25,10 +26,12 @@ import { useApp } from "@/components/AppProvider";
 import { ProjectsSubNav } from "@/components/projects/ProjectsSubNav";
 
 type Mode = "member" | "admin";
-type BoardVariant = "active" | "archived";
+type BoardVariant = "active" | "archived" | "upcoming";
+type StatusFilter = ProjectStatus | "all" | "new";
 
-const STATUS_OPTIONS_ACTIVE: { value: ProjectStatus | "all"; label: string }[] = [
+const STATUS_OPTIONS_ACTIVE: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All statuses" },
+  { value: "new", label: "New" },
   { value: "in_progress", label: "In progress" },
   { value: "completed", label: "Completed" },
   { value: "canceled", label: "Canceled" },
@@ -84,13 +87,15 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
   const { user } = useApp();
   const isAdmin = mode === "admin";
   const isArchivedView = variant === "archived";
+  const isUpcomingView = variant === "upcoming";
+  const isQueueView = isArchivedView || isUpcomingView;
   const [projects, setProjects] = useState<Project[]>([]);
   const [fields, setFields] = useState<MemberField[]>([]);
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [fieldFilter, setFieldFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [memberFilter, setMemberFilter] = useState("all");
   const [budgetTypeFilter, setBudgetTypeFilter] = useState<BudgetType | "all">("all");
   const [sortBy, setSortBy] = useState<ProjectSortKey>("default");
@@ -117,16 +122,20 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       const base = isAdmin
         ? isArchivedView
           ? "/admin/projects/archived"
-          : "/admin/projects"
+          : isUpcomingView
+            ? "/admin/projects/upcoming"
+            : "/admin/projects"
         : isArchivedView
           ? "/projects/archived"
-          : "/projects";
+          : isUpcomingView
+            ? "/projects/upcoming"
+            : "/projects";
       const url = projectId ? `${base}#${projectId}` : base;
       if (typeof window !== "undefined") {
         window.history.replaceState(null, "", url);
       }
     },
-    [isAdmin, isArchivedView]
+    [isAdmin, isArchivedView, isUpcomingView]
   );
 
   const closeEditModal = useCallback(() => {
@@ -172,9 +181,14 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
     if (fieldFilter !== "all") params.set("fieldId", fieldFilter);
     if (isArchivedView) {
       params.set("status", "archived");
+    } else if (isUpcomingView) {
+      params.set("status", "upcoming");
     } else {
       params.set("excludeArchived", "true");
-      if (statusFilter !== "all") params.set("status", statusFilter);
+      params.set("excludeUpcoming", "true");
+      if (statusFilter !== "all" && statusFilter !== "new") {
+        params.set("status", statusFilter);
+      }
     }
     if (isAdmin && memberFilter !== "all") params.set("ownerId", memberFilter);
 
@@ -182,7 +196,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
     const data = await res.json();
     setProjects(data.projects || []);
     setLoading(false);
-  }, [fieldFilter, statusFilter, memberFilter, isAdmin, isArchivedView]);
+  }, [fieldFilter, statusFilter, memberFilter, isAdmin, isArchivedView, isUpcomingView]);
 
   async function refreshProjects() {
     setRefreshing(true);
@@ -257,14 +271,18 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
 
   const title = isArchivedView
     ? "Archived projects"
-    : isAdmin
-      ? "Active Projects"
-      : "My Projects";
+    : isUpcomingView
+      ? "Upcoming projects"
+      : isAdmin
+        ? "Active Projects"
+        : "My Projects";
   const subtitle = isArchivedView
     ? "Restore archived projects to move them back to your active list."
-    : isAdmin
-      ? "View and manage projects across all members."
-      : "Track what you are working on and your completion progress.";
+    : isUpcomingView
+      ? "Plan work ahead. Move a project to active when you are ready to start."
+      : isAdmin
+        ? "View and manage projects across all members."
+        : "Track what you are working on and your completion progress.";
 
   function openCreate() {
     setForm(emptyForm());
@@ -307,9 +325,13 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       fieldId: form.fieldId,
       ...budgetPayload(form),
       timeline: form.timeline,
-      previewLink: form.previewLink,
-      githubLink: form.githubLink,
     };
+    if (isUpcomingView) {
+      body.status = "upcoming";
+    } else {
+      body.previewLink = form.previewLink;
+      body.githubLink = form.githubLink;
+    }
     if (isAdmin) body.assignTo = form.assignTo;
 
     setBoardUpdating(true);
@@ -344,11 +366,15 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       fieldId: form.fieldId,
       ...budgetPayload(form),
       timeline: form.timeline,
-      previewLink: form.previewLink,
-      githubLink: form.githubLink,
     };
+    if (!isUpcomingView && editing?.status !== "upcoming") {
+      body.previewLink = form.previewLink;
+      body.githubLink = form.githubLink;
+    }
     if (isAdmin) body.assignTo = form.assignTo;
-    else if (form.budgetType === "fixed") body.completionRate = form.completionRate;
+    else if (!isUpcomingView && editing?.status !== "upcoming" && form.budgetType === "fixed") {
+      body.completionRate = form.completionRate;
+    }
 
     setBoardUpdating(true);
     try {
@@ -419,12 +445,15 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
   );
 
   const displayedProjects = useMemo(() => {
-    const filtered =
+    let filtered =
       budgetTypeFilter === "all"
         ? projects
         : projects.filter((p) => p.budgetType === budgetTypeFilter);
+    if (!isQueueView && statusFilter === "new") {
+      filtered = filtered.filter(isProjectNew);
+    }
     return sortProjects(filtered, sortBy);
-  }, [projects, sortBy, budgetTypeFilter]);
+  }, [projects, sortBy, budgetTypeFilter, statusFilter, isQueueView]);
 
   function ProjectMenu({ p }: { p: Project }) {
     const open = menuId === p._id;
@@ -457,7 +486,32 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            {isArchivedView ? (
+            {isUpcomingView ? (
+              <>
+                <button
+                  type="button"
+                  disabled={!!actionBusy || boardUpdating}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-brand-700 cursor-pointer disabled:opacity-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void patchStatus(p._id, "in_progress");
+                  }}
+                >
+                  {actionBusy === `${p._id}:in_progress` ? "Starting..." : "Move to start"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!actionBusy || boardUpdating}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer disabled:opacity-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void patchStatus(p._id, "archived");
+                  }}
+                >
+                  {actionBusy === `${p._id}:archived` ? "Archiving..." : "Archive"}
+                </button>
+              </>
+            ) : isArchivedView ? (
               <button
                 type="button"
                 disabled={!!actionBusy || boardUpdating}
@@ -548,7 +602,8 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
   function ProjectCard({ p }: { p: Project }) {
     const owner = ownerInfo(p.owner);
     const busy = boardUpdating && (actionBusy?.startsWith(p._id) ?? false);
-    const urgent = isProjectUrgent(p.createdAt, p.timeline, p.status);
+    const urgent = !isUpcomingView && isProjectUrgent(p.createdAt, p.timeline, p.status);
+    const showWorkTracking = !isUpcomingView && p.status !== "upcoming";
     return (
       <article
         role="button"
@@ -568,8 +623,10 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <h3 className="font-semibold text-slate-900 truncate">{p.title}</h3>
-              <ProjectStatusBadge status={p.status} />
-              <ProjectLinkIcons previewLink={p.previewLink} githubLink={p.githubLink} />
+              <ProjectStatusBadge status={p.status} project={p} />
+              {showWorkTracking && (
+                <ProjectLinkIcons previewLink={p.previewLink} githubLink={p.githubLink} />
+              )}
             </div>
             {isAdmin && (
               <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
@@ -590,7 +647,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           )}
           <ProjectTimelineDisplay timeline={p.timeline} createdAt={p.createdAt} status={p.status} />
         </div>
-        {p.budgetType === "hourly" ? (
+        {showWorkTracking && p.budgetType === "hourly" ? (
           <div className="mt-4 w-full">
             <div className="flex justify-between text-sm mb-2">
               <span className="text-slate-600">Time logged</span>
@@ -602,7 +659,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
               compact
             />
           </div>
-        ) : (
+        ) : showWorkTracking ? (
           <div className="mt-4">
             <div className="flex justify-between text-sm mb-1">
               <span className="text-slate-600">Progress</span>
@@ -610,7 +667,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
             </div>
             <ProgressBar value={p.completionRate} />
           </div>
-        )}
+        ) : null}
       </article>
     );
   }
@@ -618,7 +675,8 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
   function ProjectRow({ p }: { p: Project }) {
     const owner = ownerInfo(p.owner);
     const busy = boardUpdating && (actionBusy?.startsWith(p._id) ?? false);
-    const urgent = isProjectUrgent(p.createdAt, p.timeline, p.status);
+    const urgent = !isUpcomingView && isProjectUrgent(p.createdAt, p.timeline, p.status);
+    const showWorkTracking = !isUpcomingView && p.status !== "upcoming";
     return (
       <article
         role="button"
@@ -637,8 +695,10 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-semibold text-slate-900">{p.title}</h3>
-            <ProjectStatusBadge status={p.status} />
-            <ProjectLinkIcons previewLink={p.previewLink} githubLink={p.githubLink} />
+            <ProjectStatusBadge status={p.status} project={p} />
+            {showWorkTracking && (
+              <ProjectLinkIcons previewLink={p.previewLink} githubLink={p.githubLink} />
+            )}
             {p.fieldName && <span className="text-xs text-brand-600">{p.fieldName}</span>}
           </div>
           {isAdmin && (
@@ -657,7 +717,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
           </div>
         </div>
         <div className="w-full sm:w-auto sm:max-w-[min(100%,18rem)] shrink-0 self-start order-3 sm:order-none">
-          {p.budgetType === "hourly" ? (
+          {showWorkTracking && p.budgetType === "hourly" ? (
             <div className="w-full">
               <ProjectTimeHeatmap
                 hoursByDate={p.timeByDate ?? {}}
@@ -668,12 +728,12 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
                 {formatHours(p.totalLoggedHours ?? 0)} hr
               </p>
             </div>
-          ) : (
+          ) : showWorkTracking ? (
             <>
               <ProgressBar value={p.completionRate} />
               <p className="text-xs text-left sm:text-right text-slate-500 mt-1">{p.completionRate}%</p>
             </>
-          )}
+          ) : null}
         </div>
         <div className="self-end sm:self-center shrink-0 order-2 sm:order-none ml-auto sm:ml-0">
           <ProjectMenu p={p} />
@@ -682,10 +742,20 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
     );
   }
 
+  const showLinksInForm = !isUpcomingView && editing?.status !== "upcoming";
+  const showProgressInForm =
+    !isUpcomingView && editing?.status !== "upcoming" && !isAdmin && form.budgetType === "fixed";
+  const showTimeInForm =
+    !isUpcomingView &&
+    editing?.status !== "upcoming" &&
+    !!editing &&
+    !isAdmin &&
+    ownerId(editing.owner) === user.sub;
+
   return (
     <div className="space-y-6">
       <ProjectsSubNav mode={isAdmin ? "admin" : "member"} />
-      {isArchivedView && (
+      {isQueueView && (
         <Link
           href={activeProjectsHref}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:underline"
@@ -704,7 +774,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
             onClick={openCreate}
             className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 transition shrink-0 cursor-pointer"
           >
-            Add project
+            {isUpcomingView ? "Add upcoming project" : "Add project"}
           </button>
         )}
       </div>
@@ -795,10 +865,10 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
               </option>
             ))}
           </select>
-          {!isArchivedView && (
+          {!isQueueView && (
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as ProjectStatus | "all")}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
               className="text-sm rounded-lg border border-slate-300 px-3 py-2"
             >
               {STATUS_OPTIONS_ACTIVE.map((s) => (
@@ -829,14 +899,20 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
       ) : displayedProjects.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
           <p className="text-slate-600 font-medium">
-            {isArchivedView ? "No archived projects" : "No projects yet"}
+            {isArchivedView
+              ? "No archived projects"
+              : isUpcomingView
+                ? "No upcoming projects"
+                : "No projects yet"}
           </p>
           <p className="text-slate-500 text-sm mt-1 mb-6">
             {isArchivedView
               ? "Projects you archive will appear here."
-              : isAdmin
-                ? "Create a project and assign it to a team member."
-                : "Add your first project to start tracking progress."}
+              : isUpcomingView
+                ? "Add projects you plan to work on soon."
+                : isAdmin
+                  ? "Create a project and assign it to a team member."
+                  : "Add your first project to start tracking progress."}
           </p>
           {isArchivedView ? (
             <Link
@@ -851,7 +927,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
               onClick={openCreate}
               className="bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg px-5 py-2.5 cursor-pointer"
             >
-              Add project
+              {isUpcomingView ? "Add upcoming project" : "Add project"}
             </button>
           )}
         </div>
@@ -883,7 +959,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         onClose={() => {
           if (!savingCreate) setCreateOpen(false);
         }}
-        title="Add project"
+        title={isUpcomingView ? "Add upcoming project" : "Add project"}
         wide
       >
         <form onSubmit={submitCreate} className="space-y-4">
@@ -894,6 +970,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
             members={members}
             showAssign={isAdmin}
             showProgress={false}
+            showLinks={!isUpcomingView}
             error={error}
           />
           <div className="flex gap-3 pt-2">
@@ -903,7 +980,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
               loadingText="Creating..."
               disabled={!canCreate}
             >
-              Create project
+              {isUpcomingView ? "Create upcoming project" : "Create project"}
             </ActionButton>
             <ActionButton
               type="button"
@@ -922,7 +999,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
         onClose={() => {
           if (!savingEdit) closeEditModal();
         }}
-        title="Edit project"
+        title={isUpcomingView || editing?.status === "upcoming" ? "Edit upcoming project" : "Edit project"}
         xl
         splitScroll
       >
@@ -935,13 +1012,12 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
                 fields={fields}
                 members={members}
                 showAssign={isAdmin}
-                showProgress={!isAdmin && form.budgetType === "fixed"}
+                showProgress={showProgressInForm}
+                showLinks={showLinksInForm}
                 projectId={editing?._id}
                 projectCreatedAt={editing?.createdAt}
                 savedBudgetType={editing?.budgetType}
-                canTrackTime={
-                  !!editing && !isAdmin && ownerId(editing.owner) === user.sub
-                }
+                canTrackTime={showTimeInForm}
                 onTimeLogged={() => void loadProjects()}
                 error={error}
               />

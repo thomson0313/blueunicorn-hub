@@ -31,7 +31,7 @@ export type BudgetFinancialSummary = {
 };
 
 export function summarizeBudgetFinancials(projects: Project[]): BudgetFinancialSummary {
-  const active = projects.filter((p) => p.status !== "archived");
+  const active = projects.filter((p) => p.status !== "archived" && p.status !== "upcoming");
   let estimated = 0;
   let earned = 0;
   for (const p of active) {

@@ -7,7 +7,7 @@ import { notifyProjectActivity } from "@/lib/hub-notifications";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
 import { budgetFieldsSchema, applyBudgetToPatch } from "@/lib/project-budget-api";
 
-const statusEnum = z.enum(["in_progress", "completed", "canceled", "archived"]);
+const statusEnum = z.enum(["in_progress", "completed", "canceled", "archived", "upcoming"]);
 
 const updateSchema = z
   .object({
