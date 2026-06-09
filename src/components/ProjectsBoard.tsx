@@ -23,7 +23,7 @@ import { isProjectUrgent } from "@/lib/project-timeline";
 import { sortProjects, type ProjectSortKey } from "@/lib/project-sort";
 import { timeAgo } from "@/lib/time-ago";
 import { useApp } from "@/components/AppProvider";
-import { ProjectsSubNav } from "@/components/projects/ProjectsSubNav";
+// import { ProjectsSubNav } from "@/components/projects/ProjectsSubNav";
 
 type Mode = "member" | "admin";
 type BoardVariant = "active" | "archived" | "upcoming";
@@ -754,7 +754,7 @@ export function ProjectsBoard({ mode, variant = "active" }: { mode: Mode; varian
 
   return (
     <div className="space-y-6">
-      <ProjectsSubNav mode={isAdmin ? "admin" : "member"} />
+      {/* <ProjectsSubNav mode={isAdmin ? "admin" : "member"} /> */}
       {isQueueView && (
         <Link
           href={activeProjectsHref}
