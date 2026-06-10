@@ -16,11 +16,27 @@ const WEEKDAY_MAP: Record<string, number> = {
   Sat: 6,
 };
 
-export function getBrowserTimezone(): string {
+export const DEFAULT_TIMEZONE = "UTC";
+
+/** Validates a timezone string for Intl; falls back to UTC. */
+export function normalizeTimeZone(tz: unknown): string {
+  if (typeof tz !== "string" || !tz.trim()) return DEFAULT_TIMEZONE;
+  const value = tz.trim();
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    Intl.DateTimeFormat("en-US", { timeZone: value });
+    return value;
   } catch {
-    return "UTC";
+    return DEFAULT_TIMEZONE;
+  }
+}
+
+/** Browser local IANA timezone; UTC during SSR or when detection fails. */
+export function getBrowserTimezone(): string {
+  if (typeof window === "undefined") return DEFAULT_TIMEZONE;
+  try {
+    return normalizeTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch {
+    return DEFAULT_TIMEZONE;
   }
 }
 
@@ -48,8 +64,9 @@ export function listTimezoneOptions(): { value: string; label: string }[] {
 }
 
 export function getYmdInTimezone(date: Date, timeZone: string): Ymd {
+  const tz = normalizeTimeZone(timeZone);
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -61,7 +78,8 @@ export function getYmdInTimezone(date: Date, timeZone: string): Ymd {
 }
 
 export function getWeekdayInTimezone(date: Date, timeZone: string): number {
-  const label = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(date);
+  const tz = normalizeTimeZone(timeZone);
+  const label = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(date);
   return WEEKDAY_MAP[label] ?? 0;
 }
 
@@ -82,8 +100,9 @@ export function getWeekDays(anchor: Date, timeZone: string): Ymd[] {
 }
 
 function getOffsetMs(date: Date, timeZone: string): number {
+  const tz = normalizeTimeZone(timeZone);
   const utc = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
-  const zoned = new Date(date.toLocaleString("en-US", { timeZone }));
+  const zoned = new Date(date.toLocaleString("en-US", { timeZone: tz }));
   return zoned.getTime() - utc.getTime();
 }
 
@@ -127,8 +146,9 @@ export function ymdToDateInput(ymd: Ymd): string {
 }
 
 export function formatTimeRange(startIso: string, endIso: string, timeZone: string): string {
+  const tz = normalizeTimeZone(timeZone);
   const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: tz,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -137,8 +157,9 @@ export function formatTimeRange(startIso: string, endIso: string, timeZone: stri
 }
 
 export function formatTime(iso: string, timeZone: string): string {
+  const tz = normalizeTimeZone(timeZone);
   return new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: tz,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -146,9 +167,10 @@ export function formatTime(iso: string, timeZone: string): string {
 }
 
 export function formatDayHeader(ymd: Ymd, timeZone: string): string {
-  const date = zonedDateTimeToUtc(ymd, 12, 0, timeZone);
+  const tz = normalizeTimeZone(timeZone);
+  const date = zonedDateTimeToUtc(ymd, 12, 0, tz);
   return new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: tz,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -171,8 +193,9 @@ export type ScheduleSegment = {
 };
 
 function minutesSinceMidnight(date: Date, timeZone: string): number {
+  const tz = normalizeTimeZone(timeZone);
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: tz,
     hour: "numeric",
     minute: "numeric",
     hour12: false,
@@ -236,8 +259,9 @@ export function enforceEventEnd(startIso: string): string {
 }
 
 export function toDatetimeLocalValue(iso: string, timeZone: string): string {
+  const tz = normalizeTimeZone(timeZone);
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

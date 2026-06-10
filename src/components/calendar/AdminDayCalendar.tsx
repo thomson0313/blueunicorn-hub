@@ -10,7 +10,6 @@ import {
   buildAdminDaySegments,
   formatDayHeader,
   formatTimeRange,
-  getBrowserTimezone,
   getCurrentTimeLine,
   getYmdInTimezone,
   listTimezoneOptions,
@@ -18,12 +17,13 @@ import {
   ymdToDateInput,
   zonedDateTimeToUtc,
 } from "@/lib/calendar-utils";
+import { useCalendarTimezone } from "@/components/calendar/useCalendarTimezone";
 
 type MemberRow = { id: string; name: string; avatarUrl: string | null };
 
 export function AdminDayCalendar() {
   const [anchorDate, setAnchorDate] = useState(() => new Date());
-  const [timeZone, setTimeZone] = useState(getBrowserTimezone);
+  const { timeZone, setTimeZone, ready: timezoneReady } = useCalendarTimezone();
   const [schedules, setSchedules] = useState<CalendarScheduleWithUser[]>([]);
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,8 +44,9 @@ export function AdminDayCalendar() {
   }, [dayYmd, timeZone]);
 
   useEffect(() => {
+    if (!timezoneReady) return;
     void load();
-  }, [load]);
+  }, [load, timezoneReady]);
 
   const segments = useMemo(
     () =>
@@ -108,7 +109,7 @@ export function AdminDayCalendar() {
         </div>
       </div>
 
-      {loading ? (
+      {!timezoneReady || loading ? (
         <PanelLoader variant="grid" />
       ) : members.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center text-slate-500">

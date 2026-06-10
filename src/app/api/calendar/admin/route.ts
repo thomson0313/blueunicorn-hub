@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { listInterviewSchedulesForDay, listUsers } from "@/lib/repo";
 import { requireAdmin, handleError, HttpError } from "@/lib/api-guard";
-import { getDayRangeUtc, parseYmd } from "@/lib/calendar-utils";
+import { getDayRangeUtc, normalizeTimeZone, parseYmd } from "@/lib/calendar-utils";
 
 export async function GET(req: Request) {
   try {
@@ -10,7 +10,7 @@ export async function GET(req: Request) {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const date = searchParams.get("date");
-    const timeZone = searchParams.get("timezone") || "UTC";
+    const timeZone = normalizeTimeZone(searchParams.get("timezone"));
     if (!date) throw new HttpError(400, "date query param is required");
     const ymd = parseYmd(date);
     if (!ymd) throw new HttpError(400, "Invalid date");

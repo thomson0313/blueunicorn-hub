@@ -12,7 +12,6 @@ import {
   buildWeekScheduleSegments,
   formatDayHeader,
   formatTimeRange,
-  getBrowserTimezone,
   getCurrentTimeLine,
   getWeekDays,
   getWeekRangeUtc,
@@ -23,12 +22,13 @@ import {
   zonedDateTimeToUtc,
   type Ymd,
 } from "@/lib/calendar-utils";
+import { useCalendarTimezone } from "@/components/calendar/useCalendarTimezone";
 
 type FilterType = "all" | "event" | "interview";
 
 export function MemberWeekCalendar() {
   const [anchorDate, setAnchorDate] = useState(() => new Date());
-  const [timeZone, setTimeZone] = useState(getBrowserTimezone);
+  const { timeZone, setTimeZone, ready: timezoneReady } = useCalendarTimezone();
   const [filter, setFilter] = useState<FilterType>("all");
   const [schedules, setSchedules] = useState<CalendarSchedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,8 +68,9 @@ export function MemberWeekCalendar() {
   }, [anchorDate, timeZone, filter]);
 
   useEffect(() => {
+    if (!timezoneReady) return;
     void loadSchedules();
-  }, [loadSchedules]);
+  }, [loadSchedules, timezoneReady]);
 
   const segments = useMemo(
     () => buildWeekScheduleSegments(schedules, weekDays, timeZone),
@@ -155,7 +156,7 @@ export function MemberWeekCalendar() {
         </div>
       </div>
 
-      {loading ? (
+      {!timezoneReady || loading ? (
         <PanelLoader variant="grid" />
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
