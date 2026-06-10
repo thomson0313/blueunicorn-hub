@@ -18,8 +18,13 @@ export async function GET(req: Request) {
     const { start, end } = getDayRangeUtc(ymd, timeZone);
     const schedules = await listInterviewSchedulesForDay(start, end);
     const members = (await listUsers())
-      .filter((u) => u.role === "member")
-      .map((u) => ({ id: u._id, name: u.name, avatarUrl: u.avatarUrl ?? null }))
+      .filter((u) => u.role === "member" || u.role === "admin")
+      .map((u) => ({
+        id: u._id,
+        name: u.name,
+        avatarUrl: u.avatarUrl ?? null,
+        role: u.role,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return NextResponse.json({ schedules, members, date, timeZone });

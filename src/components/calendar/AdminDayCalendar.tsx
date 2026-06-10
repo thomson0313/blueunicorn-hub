@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { PanelLoader } from "@/components/PanelLoader";
+import { ScheduleDetailModal } from "@/components/calendar/ScheduleDetailModal";
 import type { CalendarScheduleWithUser } from "@/lib/types";
 import {
   HOUR_HEIGHT,
@@ -19,14 +20,16 @@ import {
 } from "@/lib/calendar-utils";
 import { useCalendarTimezone } from "@/components/calendar/useCalendarTimezone";
 
-type MemberRow = { id: string; name: string; avatarUrl: string | null };
+type TeamRow = { id: string; name: string; avatarUrl: string | null; role?: "admin" | "member" };
 
 export function AdminDayCalendar() {
   const [anchorDate, setAnchorDate] = useState(() => new Date());
   const { timeZone, setTimeZone, ready: timezoneReady } = useCalendarTimezone();
   const [schedules, setSchedules] = useState<CalendarScheduleWithUser[]>([]);
-  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [members, setMembers] = useState<TeamRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState<CalendarScheduleWithUser | null>(null);
 
   const dayYmd = useMemo(() => getYmdInTimezone(anchorDate, timeZone), [anchorDate, timeZone]);
 
@@ -124,7 +127,7 @@ export function AdminDayCalendar() {
         <PanelLoader variant="grid" />
       ) : members.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center text-slate-500">
-          No team members found.
+          No team members or admins found.
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -143,6 +146,9 @@ export function AdminDayCalendar() {
                     <div className="flex flex-col items-center gap-1">
                       <Avatar name={m.name} src={m.avatarUrl} size={28} />
                       <span className="truncate max-w-full">{m.name}</span>
+                      {m.role === "admin" && (
+                        <span className="text-[10px] text-brand-600 font-medium">Admin</span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -171,9 +177,14 @@ export function AdminDayCalendar() {
                 ))}
 
                 {segments.map((seg, idx) => (
-                  <div
+                  <button
                     key={`${seg.schedule._id}-${idx}`}
-                    className={`absolute z-10 mx-0.5 rounded-md px-1.5 py-0.5 text-white text-left overflow-hidden shadow-sm ${seg.colorClass}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSchedule(seg.schedule);
+                      setDetailOpen(true);
+                    }}
+                    className={`absolute z-10 mx-0.5 rounded-md px-1.5 py-0.5 text-white text-left overflow-hidden shadow-sm cursor-pointer hover:brightness-110 transition ${seg.colorClass}`}
                     style={{
                       top: seg.topPx,
                       left: `calc(4rem + (100% - 4rem) * ${seg.memberIndex / members.length})`,
@@ -186,7 +197,7 @@ export function AdminDayCalendar() {
                     <p className="text-[10px] opacity-90 truncate">
                       {formatTimeRange(seg.schedule.startsAt, seg.schedule.endsAt, timeZone)}
                     </p>
-                  </div>
+                  </button>
                 ))}
 
                 {nowLineTop !== null && (
@@ -204,6 +215,18 @@ export function AdminDayCalendar() {
           </div>
         </div>
       )}
+
+      <ScheduleDetailModal
+        open={detailOpen}
+        schedule={selectedSchedule}
+        timeZone={timeZone}
+        readOnly
+        userName={selectedSchedule?.userName}
+        onClose={() => {
+          setDetailOpen(false);
+          setSelectedSchedule(null);
+        }}
+      />
     </div>
   );
 }
