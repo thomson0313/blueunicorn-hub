@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PanelLoader } from "@/components/PanelLoader";
+import { CalendarSkeleton } from "@/components/calendar/CalendarSkeleton";
 import { ScheduleDetailModal } from "@/components/calendar/ScheduleDetailModal";
 import { ScheduleFormModal } from "@/components/calendar/ScheduleFormModal";
 import type { CalendarSchedule } from "@/lib/types";
@@ -121,7 +121,7 @@ export function MemberWeekCalendar() {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold text-slate-900">Calendar</h1>
-        <PanelLoader variant="grid" />
+        <CalendarSkeleton variant="week" />
       </div>
     );
   }
@@ -175,7 +175,7 @@ export function MemberWeekCalendar() {
       </div>
 
       {loading ? (
-        <PanelLoader variant="grid" />
+        <CalendarSkeleton variant="week" />
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
@@ -220,8 +220,6 @@ export function MemberWeekCalendar() {
                 ))}
 
                 {segments.map((seg, idx) => {
-                  const left = `calc(4rem + ((100% - 4rem) / 7) * ${seg.dayIndex})`;
-                  const width = `calc((100% - 4rem) / 7 - 4px)`;
                   const isInterview = seg.schedule.type === "interview";
                   return (
                     <button
@@ -231,15 +229,15 @@ export function MemberWeekCalendar() {
                         e.stopPropagation();
                         openScheduleDetail(seg.schedule);
                       }}
-                      className={`absolute z-10 mx-0.5 rounded-md px-1.5 py-0.5 text-left overflow-hidden shadow-sm border cursor-pointer ${
+                      className={`absolute z-10 rounded-md px-1 py-0.5 text-left overflow-hidden shadow-sm border cursor-pointer ${
                         isInterview
                           ? "bg-blue-500 border-blue-600 text-white hover:bg-blue-600"
                           : "bg-sky-200 border-sky-300 text-sky-900 hover:bg-sky-300"
                       }`}
                       style={{
                         top: seg.topPx,
-                        left,
-                        width,
+                        left: `calc(4rem + ((100% - 4rem) / 7) * ${seg.dayIndex} + ((100% - 4rem) / 7 - 4px) * ${seg.columnIndex / seg.columnCount} + 2px)`,
+                        width: `calc(((100% - 4rem) / 7 - 4px) / ${seg.columnCount} - 2px)`,
                         height: seg.heightPx,
                       }}
                     >

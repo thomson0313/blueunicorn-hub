@@ -255,7 +255,76 @@ export type ScheduleSegment = {
   dayIndex: number;
   topPx: number;
   heightPx: number;
+  startMin: number;
+  endMin: number;
+  columnIndex: number;
+  columnCount: number;
 };
+
+type TimeRange = { startMin: number; endMin: number };
+
+function segmentsOverlap(a: TimeRange, b: TimeRange): boolean {
+  return a.startMin < b.endMin && b.startMin < a.endMin;
+}
+
+function layoutSegmentColumns<T extends TimeRange>(
+  segments: T[]
+): (T & { columnIndex: number; columnCount: number })[] {
+  if (segments.length === 0) return [];
+
+  const result = segments.map((seg) => ({ ...seg, columnIndex: 0, columnCount: 1 }));
+  const visited = new Set<number>();
+
+  for (let i = 0; i < segments.length; i++) {
+    if (visited.has(i)) continue;
+
+    const cluster: number[] = [];
+    const queue = [i];
+    visited.add(i);
+
+    while (queue.length > 0) {
+      const idx = queue.pop()!;
+      cluster.push(idx);
+      for (let j = 0; j < segments.length; j++) {
+        if (visited.has(j)) continue;
+        if (segmentsOverlap(segments[idx], segments[j])) {
+          visited.add(j);
+          queue.push(j);
+        }
+      }
+    }
+
+    if (cluster.length === 1) continue;
+
+    const sorted = [...cluster].sort(
+      (a, b) => segments[a].startMin - segments[b].startMin || segments[a].endMin - segments[b].endMin
+    );
+    const columnEnds: number[] = [];
+    const assignments = new Map<number, number>();
+
+    for (const idx of sorted) {
+      const seg = segments[idx];
+      let col = 0;
+      while (col < columnEnds.length && columnEnds[col] > seg.startMin) {
+        col++;
+      }
+      if (col === columnEnds.length) {
+        columnEnds.push(seg.endMin);
+      } else {
+        columnEnds[col] = Math.max(columnEnds[col], seg.endMin);
+      }
+      assignments.set(idx, col);
+    }
+
+    const columnCount = columnEnds.length;
+    for (const idx of cluster) {
+      result[idx].columnIndex = assignments.get(idx) ?? 0;
+      result[idx].columnCount = columnCount;
+    }
+  }
+
+  return result;
+}
 
 function minutesSinceMidnight(date: Date, timeZone: string): number {
   const tz = normalizeTimeZone(timeZone);
@@ -276,7 +345,7 @@ export function buildWeekScheduleSegments(
   weekDays: Ymd[],
   timeZone: string
 ): ScheduleSegment[] {
-  const segments: ScheduleSegment[] = [];
+  const raw: Omit<ScheduleSegment, "columnIndex" | "columnCount">[] = [];
   for (const schedule of schedules) {
     const start = new Date(schedule.startsAt);
     const end = new Date(schedule.endsAt);
@@ -291,8 +360,20 @@ export function buildWeekScheduleSegments(
       const endMin = minutesSinceMidnight(segEnd, timeZone);
       const topPx = (startMin / 60) * HOUR_HEIGHT;
       const heightPx = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 4);
-      segments.push({ schedule, dayIndex, topPx, heightPx });
+      raw.push({ schedule, dayIndex, topPx, heightPx, startMin, endMin });
     }
+  }
+
+  const byDay = new Map<number, typeof raw>();
+  for (const seg of raw) {
+    const list = byDay.get(seg.dayIndex) ?? [];
+    list.push(seg);
+    byDay.set(seg.dayIndex, list);
+  }
+
+  const segments: ScheduleSegment[] = [];
+  for (const daySegs of byDay.values()) {
+    segments.push(...layoutSegmentColumns(daySegs));
   }
   return segments;
 }
@@ -371,6 +452,10 @@ export type AdminDaySegment = {
   memberIndex: number;
   topPx: number;
   heightPx: number;
+  startMin: number;
+  endMin: number;
+  columnIndex: number;
+  columnCount: number;
   colorClass: string;
 };
 
@@ -383,7 +468,7 @@ export function buildAdminDaySegments(
   const dayStart = zonedDateTimeToUtc(ymd, 0, 0, timeZone);
   const dayEnd = zonedDateTimeToUtc(addDaysYmd(ymd, 1), 0, 0, timeZone);
   const indexByUser = new Map(memberOrder.map((m, i) => [m.id, i]));
-  const segments: AdminDaySegment[] = [];
+  const raw: Omit<AdminDaySegment, "columnIndex" | "columnCount">[] = [];
 
   for (const schedule of schedules) {
     const start = new Date(schedule.startsAt);
@@ -394,13 +479,27 @@ export function buildAdminDaySegments(
     const startMin = minutesSinceMidnight(segStart, timeZone);
     const endMin = minutesSinceMidnight(segEnd, timeZone);
     const memberIndex = indexByUser.get(schedule.userId) ?? 0;
-    segments.push({
+    raw.push({
       schedule,
       memberIndex,
       topPx: (startMin / 60) * HOUR_HEIGHT,
       heightPx: Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 4),
+      startMin,
+      endMin,
       colorClass: memberColorClass(schedule.userId, memberIndex),
     });
+  }
+
+  const byMember = new Map<number, typeof raw>();
+  for (const seg of raw) {
+    const list = byMember.get(seg.memberIndex) ?? [];
+    list.push(seg);
+    byMember.set(seg.memberIndex, list);
+  }
+
+  const segments: AdminDaySegment[] = [];
+  for (const memberSegs of byMember.values()) {
+    segments.push(...layoutSegmentColumns(memberSegs));
   }
   return segments;
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
-import { PanelLoader } from "@/components/PanelLoader";
+import { CalendarSkeleton } from "@/components/calendar/CalendarSkeleton";
 import { ScheduleDetailModal } from "@/components/calendar/ScheduleDetailModal";
 import type { CalendarScheduleWithUser } from "@/lib/types";
 import {
@@ -79,7 +79,7 @@ export function AdminDayCalendar() {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold text-slate-900">Team interviews</h1>
-        <PanelLoader variant="grid" />
+        <CalendarSkeleton variant="day" />
       </div>
     );
   }
@@ -124,7 +124,7 @@ export function AdminDayCalendar() {
       </div>
 
       {loading ? (
-        <PanelLoader variant="grid" />
+        <CalendarSkeleton variant="day" />
       ) : members.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center text-slate-500">
           No team members or admins found.
@@ -187,8 +187,8 @@ export function AdminDayCalendar() {
                     className={`absolute z-10 mx-0.5 rounded-md px-1.5 py-0.5 text-white text-left overflow-hidden shadow-sm cursor-pointer hover:brightness-110 transition ${seg.colorClass}`}
                     style={{
                       top: seg.topPx,
-                      left: `calc(4rem + (100% - 4rem) * ${seg.memberIndex / members.length})`,
-                      width: `calc((100% - 4rem) / ${members.length} - 4px)`,
+                      left: `calc(4rem + (100% - 4rem) * ${seg.memberIndex / members.length} + ((100% - 4rem) / ${members.length} - 4px) * ${seg.columnIndex / seg.columnCount} + 2px)`,
+                      width: `calc(((100% - 4rem) / ${members.length} - 4px) / ${seg.columnCount} - 2px)`,
                       height: seg.heightPx,
                     }}
                     title={`${seg.schedule.userName}: ${seg.schedule.title}`}
