@@ -1485,3 +1485,169 @@ export async function upsertTrusted2faDevice(
   });
   dbError(error);
 }
+
+/* ----------------------------- Calendar ----------------------------- */
+
+export type CalendarScheduleType = "interview" | "event";
+
+export type CalendarScheduleRec = {
+  _id: string;
+  userId: string;
+  title: string;
+  type: CalendarScheduleType;
+  description: string;
+  meetingLink: string;
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CalendarScheduleRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  type: string;
+  description: string;
+  meeting_link: string;
+  starts_at: string;
+  ends_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+function toCalendarScheduleRec(row: CalendarScheduleRow): CalendarScheduleRec {
+  return {
+    _id: row.id,
+    userId: row.user_id,
+    title: row.title,
+    type: row.type as CalendarScheduleType,
+    description: row.description ?? "",
+    meetingLink: row.meeting_link ?? "",
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function createCalendarSchedule(data: {
+  userId: string;
+  title: string;
+  type: CalendarScheduleType;
+  description?: string;
+  meetingLink?: string;
+  startsAt: string;
+  endsAt: string;
+}): Promise<CalendarScheduleRec> {
+  const ts = nowISO();
+  const row = {
+    id: newId(),
+    user_id: data.userId,
+    title: data.title,
+    type: data.type,
+    description: data.description ?? "",
+    meeting_link: data.meetingLink ?? "",
+    starts_at: data.startsAt,
+    ends_at: data.endsAt,
+    created_at: ts,
+    updated_at: ts,
+  };
+  const { data: created, error } = await getSupabase()
+    .from("calendar_schedules")
+    .insert(row)
+    .select()
+    .single();
+  dbError(error);
+  return toCalendarScheduleRec(created as CalendarScheduleRow);
+}
+
+export async function findCalendarScheduleById(id: string): Promise<CalendarScheduleRec | null> {
+  const { data, error } = await getSupabase()
+    .from("calendar_schedules")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  dbError(error);
+  return data ? toCalendarScheduleRec(data as CalendarScheduleRow) : null;
+}
+
+export async function listCalendarSchedulesForUser(
+  userId: string,
+  rangeStart: string,
+  rangeEnd: string,
+  type?: CalendarScheduleType
+): Promise<CalendarScheduleRec[]> {
+  let query = getSupabase()
+    .from("calendar_schedules")
+    .select("*")
+    .eq("user_id", userId)
+    .lt("starts_at", rangeEnd)
+    .gt("ends_at", rangeStart)
+    .order("starts_at", { ascending: true });
+  if (type) query = query.eq("type", type);
+  const { data, error } = await query;
+  dbError(error);
+  return (data as CalendarScheduleRow[]).map(toCalendarScheduleRec);
+}
+
+export async function listInterviewSchedulesForDay(
+  dayStart: string,
+  dayEnd: string
+): Promise<(CalendarScheduleRec & { userName: string; userAvatarUrl: string | null })[]> {
+  const { data, error } = await getSupabase()
+    .from("calendar_schedules")
+    .select("*")
+    .eq("type", "interview")
+    .lt("starts_at", dayEnd)
+    .gt("ends_at", dayStart)
+    .order("starts_at", { ascending: true });
+  dbError(error);
+  const schedules = (data as CalendarScheduleRow[]).map(toCalendarScheduleRec);
+  const users = await listUsers();
+  const userMap = new Map(users.map((u) => [u._id, u]));
+  return schedules.map((s) => ({
+    ...s,
+    userName: userMap.get(s.userId)?.name ?? "Member",
+    userAvatarUrl: userMap.get(s.userId)?.avatarUrl ?? null,
+  }));
+}
+
+export async function updateCalendarSchedule(
+  id: string,
+  patch: Partial<{
+    title: string;
+    type: CalendarScheduleType;
+    description: string;
+    meetingLink: string;
+    startsAt: string;
+    endsAt: string;
+  }>
+): Promise<CalendarScheduleRec | null> {
+  const payload: Record<string, unknown> = { updated_at: nowISO() };
+  if (patch.title !== undefined) payload.title = patch.title;
+  if (patch.type !== undefined) payload.type = patch.type;
+  if (patch.description !== undefined) payload.description = patch.description;
+  if (patch.meetingLink !== undefined) payload.meeting_link = patch.meetingLink;
+  if (patch.startsAt !== undefined) payload.starts_at = patch.startsAt;
+  if (patch.endsAt !== undefined) payload.ends_at = patch.endsAt;
+  const { data, error } = await getSupabase()
+    .from("calendar_schedules")
+    .update(payload)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  dbError(error);
+  return data ? toCalendarScheduleRec(data as CalendarScheduleRow) : null;
+}
+
+export async function deleteCalendarSchedule(id: string): Promise<boolean> {
+  const { data, error } = await getSupabase()
+    .from("calendar_schedules")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+  dbError(error);
+  return !!data;
+}

@@ -109,3 +109,23 @@ export type AlertItem = {
   scheduledAt: string;
   status?: "pending" | "delivered";
 };
+
+export type CalendarScheduleType = "interview" | "event";
+
+export type CalendarSchedule = {
+  _id: string;
+  userId: string;
+  title: string;
+  type: CalendarScheduleType;
+  description: string;
+  meetingLink: string;
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CalendarScheduleWithUser = CalendarSchedule & {
+  userName: string;
+  userAvatarUrl?: string | null;
+};
