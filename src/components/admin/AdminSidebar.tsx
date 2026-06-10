@@ -27,7 +27,6 @@ const PROJECT_SUB_LINKS = [
 ];
 
 const ADMIN_LINKS: NavItem[] = [
-  { href: "/admin/calendar", label: "Team Calendar", icon: <IconCalendar /> },
   { href: "/admin/members", label: "Members", icon: <IconMembers /> },
   { href: "/admin/fields", label: "Add-ons", icon: <IconAddons /> },
   { href: "/admin/alerts", label: "Alerts", icon: <IconAlerts /> },
@@ -35,7 +34,7 @@ const ADMIN_LINKS: NavItem[] = [
 
 const APP_LINKS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: <IconDashboard /> },
-  { href: "/calendar", label: "Calendar", icon: <IconCalendar /> },
+  { href: "/admin/calendar", label: "Calendar", icon: <IconCalendar /> },
   { href: "/chat", label: "Chat", icon: <IconChat /> },
 ];
 

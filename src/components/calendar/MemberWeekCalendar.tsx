@@ -18,6 +18,7 @@ import {
   getYmdInTimezone,
   isTodayYmd,
   listTimezoneOptions,
+  safeToIso,
   ymdToDateInput,
   zonedDateTimeToUtc,
   type Ymd,
@@ -87,8 +88,9 @@ export function MemberWeekCalendar() {
   }
 
   function openCreateCell(day: Ymd, hour: number) {
+    if (!timezoneReady) return;
     const start = zonedDateTimeToUtc(day, hour, 0, timeZone);
-    setFormStartIso(start.toISOString());
+    setFormStartIso(safeToIso(start));
     setEditingSchedule(null);
     setFormOpen(true);
   }
@@ -106,7 +108,19 @@ export function MemberWeekCalendar() {
     setFormOpen(true);
   }
 
-  const tzOptions = useMemo(() => listTimezoneOptions(), []);
+  const tzOptions = useMemo(
+    () => (timezoneReady ? listTimezoneOptions(timeZone) : []),
+    [timeZone, timezoneReady]
+  );
+
+  if (!timezoneReady) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold text-slate-900">Calendar</h1>
+        <PanelLoader variant="grid" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -156,7 +170,7 @@ export function MemberWeekCalendar() {
         </div>
       </div>
 
-      {!timezoneReady || loading ? (
+      {loading ? (
         <PanelLoader variant="grid" />
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

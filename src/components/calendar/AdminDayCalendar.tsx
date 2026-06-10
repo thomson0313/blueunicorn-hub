@@ -67,8 +67,19 @@ export function AdminDayCalendar() {
     return getCurrentTimeLine([dayYmd], timeZone)?.topPx ?? null;
   }, [dayYmd, timeZone]);
 
-  const tzOptions = useMemo(() => listTimezoneOptions(), []);
-  const memberColWidth = members.length > 0 ? `${100 / members.length}%` : "100%";
+  const tzOptions = useMemo(
+    () => (timezoneReady ? listTimezoneOptions(timeZone) : []),
+    [timeZone, timezoneReady]
+  );
+
+  if (!timezoneReady) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold text-slate-900">Team interviews</h1>
+        <PanelLoader variant="grid" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -109,7 +120,7 @@ export function AdminDayCalendar() {
         </div>
       </div>
 
-      {!timezoneReady || loading ? (
+      {loading ? (
         <PanelLoader variant="grid" />
       ) : members.length === 0 ? (
         <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center text-slate-500">

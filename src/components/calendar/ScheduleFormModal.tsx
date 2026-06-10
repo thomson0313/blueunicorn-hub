@@ -7,6 +7,7 @@ import {
   datetimeLocalInTimezoneToUtc,
   defaultEndIso,
   enforceEventEnd,
+  formatTime,
   formatTimeRange,
   toDatetimeLocalValue,
 } from "@/lib/calendar-utils";
@@ -43,6 +44,7 @@ export function ScheduleFormModal({
 
   useEffect(() => {
     if (!open) return;
+    if (!schedule && !initialStartIso) return;
     if (schedule) {
       setTitle(schedule.title);
       setType(schedule.type);
@@ -66,7 +68,7 @@ export function ScheduleFormModal({
     setEndLocal(toDatetimeLocalValue(defaultEndIso(startIso, type), timeZone));
   }, [type, startIso, open, isEdit, timeZone]);
 
-  if (!open) return null;
+  if (!open || (!schedule && !initialStartIso)) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -156,7 +158,7 @@ export function ScheduleFormModal({
                 <span className="text-xs text-slate-500">Start</span>
                 <input
                   disabled
-                  value={formatTimeRange(startIso, startIso, timeZone).split("–")[0]?.trim() ?? ""}
+                  value={formatTime(startIso, timeZone)}
                   className={`${INPUT_CLASS} bg-slate-50 text-slate-600 mt-0.5`}
                 />
               </div>

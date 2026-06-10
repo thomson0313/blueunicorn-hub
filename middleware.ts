@@ -55,6 +55,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  if (pathname === "/calendar" && session?.role === "admin") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/admin/calendar";
+    return NextResponse.redirect(url);
+  }
+
   if (isPublic && session && sessionMayUseApp(session)) {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
