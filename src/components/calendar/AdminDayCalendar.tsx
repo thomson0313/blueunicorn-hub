@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
+import { CalendarNavChevrons } from "@/components/calendar/CalendarNavChevrons";
 import { CalendarSkeleton } from "@/components/calendar/CalendarSkeleton";
 import { ScheduleDetailModal } from "@/components/calendar/ScheduleDetailModal";
 import type { CalendarScheduleWithUser } from "@/lib/types";
 import {
+  addDaysYmd,
   HOUR_HEIGHT,
   HOURS,
   buildAdminDaySegments,
@@ -75,6 +77,10 @@ export function AdminDayCalendar() {
     [timeZone, timezoneReady]
   );
 
+  function shiftDay(days: number) {
+    setAnchorDate(zonedDateTimeToUtc(addDaysYmd(dayYmd, days), 12, 0, timeZone));
+  }
+
   if (!timezoneReady) {
     return (
       <div className="space-y-4">
@@ -92,6 +98,12 @@ export function AdminDayCalendar() {
           <p className="text-slate-500">{formatDayHeader(dayYmd, timeZone)} · read-only</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <CalendarNavChevrons
+            onPrevious={() => shiftDay(-1)}
+            onNext={() => shiftDay(1)}
+            previousLabel="Previous day"
+            nextLabel="Next day"
+          />
           <input
             type="date"
             value={ymdToDateInput(dayYmd)}

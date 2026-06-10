@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CalendarNavChevrons } from "@/components/calendar/CalendarNavChevrons";
 import { CalendarSkeleton } from "@/components/calendar/CalendarSkeleton";
 import { ScheduleDetailModal } from "@/components/calendar/ScheduleDetailModal";
 import { ScheduleFormModal } from "@/components/calendar/ScheduleFormModal";
 import type { CalendarSchedule } from "@/lib/types";
 import {
+  addDaysYmd,
   HOUR_HEIGHT,
   HOURS,
   WEEKDAY_LABELS,
@@ -87,6 +89,11 @@ export function MemberWeekCalendar() {
     setAnchorDate(new Date());
   }
 
+  function shiftWeek(days: number) {
+    const ymd = getYmdInTimezone(anchorDate, timeZone);
+    setAnchorDate(zonedDateTimeToUtc(addDaysYmd(ymd, days), 12, 0, timeZone));
+  }
+
   function openCreateCell(day: Ymd, hour: number) {
     if (!timezoneReady) return;
     try {
@@ -134,6 +141,12 @@ export function MemberWeekCalendar() {
           <p className="text-slate-500">{weekLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <CalendarNavChevrons
+            onPrevious={() => shiftWeek(-7)}
+            onNext={() => shiftWeek(7)}
+            previousLabel="Previous week"
+            nextLabel="Next week"
+          />
           <input
             type="date"
             value={ymdToDateInput(getYmdInTimezone(anchorDate, timeZone))}
