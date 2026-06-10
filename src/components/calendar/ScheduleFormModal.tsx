@@ -6,9 +6,6 @@ import type { CalendarSchedule, CalendarScheduleType } from "@/lib/types";
 import {
   datetimeLocalInTimezoneToUtc,
   defaultEndIso,
-  enforceEventEnd,
-  formatTime,
-  formatTimeRange,
   isValidDate,
   toDatetimeLocalValue,
 } from "@/lib/calendar-utils";
@@ -38,12 +35,21 @@ export function ScheduleFormModal({
   const [type, setType] = useState<CalendarScheduleType>("interview");
   const [description, setDescription] = useState("");
   const [meetingLink, setMeetingLink] = useState("");
-  const [startIso, setStartIso] = useState("");
+  const [startLocal, setStartLocal] = useState("");
   const [endLocal, setEndLocal] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const startIsoValid = !!startIso && isValidDate(new Date(startIso));
+  function isLocalTimeValid(value: string): boolean {
+    if (!value) return false;
+    try {
+      return isValidDate(new Date(datetimeLocalInTimezoneToUtc(value, timeZone)));
+    } catch {
+      return false;
+    }
+  }
+
+  const timesValid = isLocalTimeValid(startLocal) && isLocalTimeValid(endLocal);
 
   // Reset fields when opening a new cell (not when only type changes).
   useEffect(() => {
@@ -63,12 +69,12 @@ export function ScheduleFormModal({
       setType(schedule.type);
       setDescription(schedule.description);
       setMeetingLink(schedule.meetingLink);
-      setStartIso(schedule.startsAt);
+      setStartLocal(toDatetimeLocalValue(schedule.startsAt, timeZone));
       setEndLocal(toDatetimeLocalValue(schedule.endsAt, timeZone));
       return;
     }
     if (!initialStartIso || !isValidDate(new Date(initialStartIso))) return;
-    setStartIso(initialStartIso);
+    setStartLocal(toDatetimeLocalValue(initialStartIso, timeZone));
     setEndLocal(toDatetimeLocalValue(defaultEndIso(initialStartIso, type), timeZone));
   }, [open, schedule, initialStartIso, timeZone, type]);
 
@@ -76,16 +82,21 @@ export function ScheduleFormModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || saving || !startIsoValid) return;
+    if (!title.trim() || saving || !timesValid) return;
     setSaving(true);
     setError("");
     try {
-      const endsAt =
-        type === "event"
-          ? enforceEventEnd(startIso)
-          : datetimeLocalInTimezoneToUtc(endLocal, timeZone);
-      if (!endsAt) {
-        setError("Invalid end time");
+      let startsAt: string;
+      let endsAt: string;
+      try {
+        startsAt = datetimeLocalInTimezoneToUtc(startLocal, timeZone);
+        endsAt = datetimeLocalInTimezoneToUtc(endLocal, timeZone);
+      } catch {
+        setError("Invalid start or end time");
+        return;
+      }
+      if (new Date(endsAt) <= new Date(startsAt)) {
+        setError("End time must be after start time");
         return;
       }
       const body = {
@@ -93,7 +104,7 @@ export function ScheduleFormModal({
         type,
         description,
         meetingLink: type === "interview" ? meetingLink : "",
-        startsAt: startIso,
+        startsAt,
         endsAt,
       };
       const url = isEdit ? `/api/calendar/${schedule!._id}` : "/api/calendar";
@@ -113,8 +124,6 @@ export function ScheduleFormModal({
       setSaving(false);
     }
   }
-
-  const eventEndIso = startIsoValid ? enforceEventEnd(startIso) : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -167,32 +176,22 @@ export function ScheduleFormModal({
               <div>
                 <span className="text-xs text-slate-500">Start</span>
                 <input
-                  disabled
-                  value={formatTime(startIso, timeZone)}
-                  className={`${INPUT_CLASS} bg-slate-50 text-slate-600 mt-0.5`}
+                  type="datetime-local"
+                  required
+                  value={startLocal}
+                  onChange={(e) => setStartLocal(e.target.value)}
+                  className={`${INPUT_CLASS} mt-0.5`}
                 />
               </div>
               <div>
                 <span className="text-xs text-slate-500">End</span>
-                {type === "event" ? (
-                  <input
-                    disabled
-                    value={
-                      eventEndIso
-                        ? formatTimeRange(startIso, eventEndIso, timeZone).split("–")[1]?.trim() ?? ""
-                        : ""
-                    }
-                    className={`${INPUT_CLASS} bg-slate-50 text-slate-600 mt-0.5`}
-                  />
-                ) : (
-                  <input
-                    type="datetime-local"
-                    required
-                    value={endLocal}
-                    onChange={(e) => setEndLocal(e.target.value)}
-                    className={`${INPUT_CLASS} mt-0.5`}
-                  />
-                )}
+                <input
+                  type="datetime-local"
+                  required
+                  value={endLocal}
+                  onChange={(e) => setEndLocal(e.target.value)}
+                  className={`${INPUT_CLASS} mt-0.5`}
+                />
               </div>
             </div>
           </div>
@@ -233,7 +232,7 @@ export function ScheduleFormModal({
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex justify-end pt-2">
-            <ActionButton type="submit" loading={saving} loadingText="Saving..." disabled={!startIsoValid}>
+            <ActionButton type="submit" loading={saving} loadingText="Saving..." disabled={!timesValid}>
               Save
             </ActionButton>
           </div>

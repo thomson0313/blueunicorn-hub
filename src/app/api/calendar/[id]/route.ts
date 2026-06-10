@@ -7,8 +7,6 @@ import {
   updateCalendarSchedule,
 } from "@/lib/repo";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
-import { enforceEventEnd } from "@/lib/calendar-utils";
-
 const typeEnum = z.enum(["interview", "event"]);
 
 const updateSchema = z.object({
@@ -37,12 +35,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (!existing) throw new HttpError(404, "Schedule not found");
     if (existing.userId !== user.sub) throw new HttpError(403, "You cannot edit this schedule");
 
-    const type = parsed.data.type ?? existing.type;
     const startsAt = parsed.data.startsAt ?? existing.startsAt;
-    let endsAt = parsed.data.endsAt ?? existing.endsAt;
-    if (type === "event") {
-      endsAt = enforceEventEnd(startsAt);
-    }
+    const endsAt = parsed.data.endsAt ?? existing.endsAt;
     if (new Date(endsAt) <= new Date(startsAt)) {
       throw new HttpError(400, "End time must be after start time");
     }
