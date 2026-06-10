@@ -89,10 +89,14 @@ export function MemberWeekCalendar() {
 
   function openCreateCell(day: Ymd, hour: number) {
     if (!timezoneReady) return;
-    const start = zonedDateTimeToUtc(day, hour, 0, timeZone);
-    setFormStartIso(safeToIso(start));
-    setEditingSchedule(null);
-    setFormOpen(true);
+    try {
+      const startIso = safeToIso(zonedDateTimeToUtc(day, hour, 0, timeZone));
+      setEditingSchedule(null);
+      setFormStartIso(startIso);
+      setFormOpen(true);
+    } catch {
+      /* invalid cell time — ignore click */
+    }
   }
 
   function openScheduleDetail(schedule: CalendarSchedule) {
@@ -275,6 +279,7 @@ export function MemberWeekCalendar() {
         onClose={() => {
           setFormOpen(false);
           setEditingSchedule(null);
+          setFormStartIso("");
         }}
         onSaved={() => void loadSchedules()}
       />

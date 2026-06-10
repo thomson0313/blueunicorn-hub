@@ -9,6 +9,7 @@ import {
   enforceEventEnd,
   formatTime,
   formatTimeRange,
+  isValidDate,
   toDatetimeLocalValue,
 } from "@/lib/calendar-utils";
 
@@ -37,14 +38,26 @@ export function ScheduleFormModal({
   const [type, setType] = useState<CalendarScheduleType>("interview");
   const [description, setDescription] = useState("");
   const [meetingLink, setMeetingLink] = useState("");
-  const [startIso, setStartIso] = useState(initialStartIso);
+  const [startIso, setStartIso] = useState("");
   const [endLocal, setEndLocal] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const startIsoValid = !!startIso && isValidDate(new Date(startIso));
+
+  // Reset fields when opening a new cell (not when only type changes).
+  useEffect(() => {
+    if (!open || schedule || !initialStartIso) return;
+    setTitle("");
+    setType("interview");
+    setDescription("");
+    setMeetingLink("");
+    setError("");
+  }, [open, initialStartIso, schedule]);
+
+  // Sync times from schedule or clicked cell; recalculate end when type changes.
   useEffect(() => {
     if (!open) return;
-    if (!schedule && !initialStartIso) return;
     if (schedule) {
       setTitle(schedule.title);
       setType(schedule.type);
@@ -52,27 +65,18 @@ export function ScheduleFormModal({
       setMeetingLink(schedule.meetingLink);
       setStartIso(schedule.startsAt);
       setEndLocal(toDatetimeLocalValue(schedule.endsAt, timeZone));
-    } else {
-      setTitle("");
-      setType("interview");
-      setDescription("");
-      setMeetingLink("");
-      setStartIso(initialStartIso);
-      setEndLocal(toDatetimeLocalValue(defaultEndIso(initialStartIso, "interview"), timeZone));
+      return;
     }
-    setError("");
-  }, [open, schedule, initialStartIso, timeZone]);
-
-  useEffect(() => {
-    if (!open || isEdit) return;
-    setEndLocal(toDatetimeLocalValue(defaultEndIso(startIso, type), timeZone));
-  }, [type, startIso, open, isEdit, timeZone]);
+    if (!initialStartIso || !isValidDate(new Date(initialStartIso))) return;
+    setStartIso(initialStartIso);
+    setEndLocal(toDatetimeLocalValue(defaultEndIso(initialStartIso, type), timeZone));
+  }, [open, schedule, initialStartIso, timeZone, type]);
 
   if (!open || (!schedule && !initialStartIso)) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || saving) return;
+    if (!title.trim() || saving || !startIsoValid) return;
     setSaving(true);
     setError("");
     try {
@@ -80,6 +84,10 @@ export function ScheduleFormModal({
         type === "event"
           ? enforceEventEnd(startIso)
           : datetimeLocalInTimezoneToUtc(endLocal, timeZone);
+      if (!endsAt) {
+        setError("Invalid end time");
+        return;
+      }
       const body = {
         title: title.trim(),
         type,
@@ -105,6 +113,8 @@ export function ScheduleFormModal({
       setSaving(false);
     }
   }
+
+  const eventEndIso = startIsoValid ? enforceEventEnd(startIso) : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -167,7 +177,11 @@ export function ScheduleFormModal({
                 {type === "event" ? (
                   <input
                     disabled
-                    value={formatTimeRange(startIso, enforceEventEnd(startIso), timeZone).split("–")[1]?.trim() ?? ""}
+                    value={
+                      eventEndIso
+                        ? formatTimeRange(startIso, eventEndIso, timeZone).split("–")[1]?.trim() ?? ""
+                        : ""
+                    }
                     className={`${INPUT_CLASS} bg-slate-50 text-slate-600 mt-0.5`}
                   />
                 ) : (
@@ -219,7 +233,7 @@ export function ScheduleFormModal({
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex justify-end pt-2">
-            <ActionButton type="submit" loading={saving} loadingText="Saving...">
+            <ActionButton type="submit" loading={saving} loadingText="Saving..." disabled={!startIsoValid}>
               Save
             </ActionButton>
           </div>

@@ -265,7 +265,8 @@ function minutesSinceMidnight(date: Date, timeZone: string): number {
     minute: "numeric",
     hour12: false,
   }).formatToParts(date);
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  let hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  if (hour === 24) hour = 0;
   const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
   return hour * 60 + minute;
 }
@@ -312,36 +313,31 @@ export function getCurrentTimeLineDay(topPx: number): number {
   return topPx;
 }
 
-export function defaultEndIso(startIso: string, type: CalendarScheduleType): string {
+export function addHoursToIso(startIso: string, hours: number): string {
+  if (!startIso) return "";
   const start = new Date(startIso);
-  const hours = type === "event" ? 1 : 1;
-  return new Date(start.getTime() + hours * 60 * 60 * 1000).toISOString();
+  if (!isValidDate(start)) return "";
+  return safeToIso(new Date(start.getTime() + hours * 60 * 60 * 1000));
+}
+
+export function defaultEndIso(startIso: string, _type: CalendarScheduleType): string {
+  return addHoursToIso(startIso, 1);
 }
 
 export function enforceEventEnd(startIso: string): string {
-  const start = new Date(startIso);
-  return new Date(start.getTime() + 60 * 60 * 1000).toISOString();
+  return addHoursToIso(startIso, 1);
 }
 
 export function toDatetimeLocalValue(iso: string, timeZone: string): string {
   if (!iso) return "";
   const date = new Date(iso);
   if (!isValidDate(date)) return "";
-  const tz = normalizeTimeZone(timeZone);
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-  const y = parts.find((p) => p.type === "year")?.value ?? "1970";
-  const m = parts.find((p) => p.type === "month")?.value ?? "01";
-  const d = parts.find((p) => p.type === "day")?.value ?? "01";
-  const h = parts.find((p) => p.type === "hour")?.value ?? "00";
-  const min = parts.find((p) => p.type === "minute")?.value ?? "00";
+  const p = getZonedParts(date, timeZone);
+  const y = String(p.year);
+  const m = String(p.month).padStart(2, "0");
+  const d = String(p.day).padStart(2, "0");
+  const h = String(p.hour).padStart(2, "0");
+  const min = String(p.minute).padStart(2, "0");
   return `${y}-${m}-${d}T${h}:${min}`;
 }
 
@@ -349,7 +345,7 @@ export function datetimeLocalInTimezoneToUtc(value: string, timeZone: string): s
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
   if (!m) throw new Error("Invalid datetime");
   const ymd: Ymd = { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
-  return zonedDateTimeToUtc(ymd, Number(m[4]), Number(m[5]), timeZone).toISOString();
+  return safeToIso(zonedDateTimeToUtc(ymd, Number(m[4]), Number(m[5]), timeZone));
 }
 
 const MEMBER_COLORS = [
