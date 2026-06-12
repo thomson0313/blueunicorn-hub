@@ -32,6 +32,12 @@ export function AdminDayCalendar() {
   const [loading, setLoading] = useState(true);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<CalendarScheduleWithUser | null>(null);
+  const [nowTick, setNowTick] = useState(0);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick((t) => t + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const dayYmd = useMemo(() => getYmdInTimezone(anchorDate, timeZone), [anchorDate, timeZone]);
 
@@ -70,7 +76,7 @@ export function AdminDayCalendar() {
       return null;
     }
     return getCurrentTimeLine([dayYmd], timeZone)?.topPx ?? null;
-  }, [dayYmd, timeZone]);
+  }, [dayYmd, timeZone, nowTick]);
 
   const tzOptions = useMemo(
     () => (timezoneReady ? listTimezoneOptions(timeZone) : []),

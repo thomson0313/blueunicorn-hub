@@ -8,6 +8,7 @@ import { parse as parseCookie } from "cookie";
 import { connectDB } from "./src/lib/db";
 import { verifySession, COOKIE_NAME, type SessionPayload } from "./src/lib/auth";
 import { dmKeyFor, createMessage } from "./src/lib/repo";
+import type { ScreenShareState, ScreenShareParticipant } from "./src/lib/screen-share-types";
 
 // Load .env.local / .env so this standalone process has the same env as Next.
 loadEnvConfig(process.cwd());
@@ -26,6 +27,42 @@ const onlineCounts = new Map<string, number>();
 
 function onlineUserIds(): string[] {
   return [...onlineCounts.keys()];
+}
+
+type ScreenShareSession = {
+  hostId: string;
+  hostName: string;
+  viewers: Map<string, string>;
+  pending: Map<string, string>;
+};
+
+let screenShareSession: ScreenShareSession | null = null;
+
+function participantMapToList(map: Map<string, string>): ScreenShareParticipant[] {
+  return [...map.entries()].map(([id, name]) => ({ id, name }));
+}
+
+function serializeScreenShareState(): ScreenShareState {
+  if (!screenShareSession) {
+    return { active: false, host: null, viewers: [], pendingRequests: [] };
+  }
+  return {
+    active: true,
+    host: { id: screenShareSession.hostId, name: screenShareSession.hostName },
+    viewers: participantMapToList(screenShareSession.viewers),
+    pendingRequests: participantMapToList(screenShareSession.pending),
+  };
+}
+
+function broadcastScreenShareState(io: SocketIOServer) {
+  io.emit("screenshare:state", serializeScreenShareState());
+}
+
+function endScreenShareSession(io: SocketIOServer) {
+  if (!screenShareSession) return;
+  screenShareSession = null;
+  broadcastScreenShareState(io);
+  io.emit("screenshare:ended");
 }
 
 app.prepare().then(async () => {
@@ -68,6 +105,94 @@ app.prepare().then(async () => {
     onlineCounts.set(userId, (onlineCounts.get(userId) || 0) + 1);
     io.emit("presence:update", onlineUserIds());
 
+    socket.emit("screenshare:state", serializeScreenShareState());
+
+    socket.on("screenshare:start", () => {
+      if (user.role !== "admin") return;
+      if (screenShareSession) return;
+      screenShareSession = {
+        hostId: userId,
+        hostName: user.name,
+        viewers: new Map(),
+        pending: new Map(),
+      };
+      socket.join("screenshare:session");
+      broadcastScreenShareState(io);
+    });
+
+    socket.on("screenshare:request-join", () => {
+      if (!screenShareSession || screenShareSession.hostId === userId) return;
+      if (screenShareSession.viewers.has(userId) || screenShareSession.pending.has(userId)) return;
+      screenShareSession.pending.set(userId, user.name);
+      broadcastScreenShareState(io);
+    });
+
+    socket.on("screenshare:accept", (payload: { userId?: string }) => {
+      if (!screenShareSession || screenShareSession.hostId !== userId) return;
+      const targetId = payload?.userId;
+      if (!targetId || !screenShareSession.pending.has(targetId)) return;
+      const name = screenShareSession.pending.get(targetId)!;
+      screenShareSession.pending.delete(targetId);
+      screenShareSession.viewers.set(targetId, name);
+      broadcastScreenShareState(io);
+      io.to(`user:${targetId}`).emit("screenshare:accepted");
+    });
+
+    socket.on("screenshare:reject", (payload: { userId?: string }) => {
+      if (!screenShareSession || screenShareSession.hostId !== userId) return;
+      const targetId = payload?.userId;
+      if (!targetId) return;
+      screenShareSession.pending.delete(targetId);
+      broadcastScreenShareState(io);
+      io.to(`user:${targetId}`).emit("screenshare:rejected");
+    });
+
+    socket.on("screenshare:end", () => {
+      if (!screenShareSession || screenShareSession.hostId !== userId) return;
+      endScreenShareSession(io);
+    });
+
+    socket.on("screenshare:leave", () => {
+      if (!screenShareSession) return;
+      if (screenShareSession.hostId === userId) {
+        endScreenShareSession(io);
+        return;
+      }
+      if (screenShareSession.viewers.delete(userId)) {
+        broadcastScreenShareState(io);
+        io.to(`user:${screenShareSession.hostId}`).emit("screenshare:viewer-left", { userId });
+      }
+      screenShareSession.pending.delete(userId);
+    });
+
+    socket.on("screenshare:offer", (payload: { to?: string; sdp?: RTCSessionDescriptionInit }) => {
+      const to = payload?.to;
+      const sdp = payload?.sdp;
+      if (!to || !sdp) return;
+      if (!screenShareSession) return;
+      if (screenShareSession.hostId !== userId && !screenShareSession.viewers.has(userId)) return;
+      io.to(`user:${to}`).emit("screenshare:offer", { from: userId, sdp });
+    });
+
+    socket.on("screenshare:answer", (payload: { to?: string; sdp?: RTCSessionDescriptionInit }) => {
+      const to = payload?.to;
+      const sdp = payload?.sdp;
+      if (!to || !sdp) return;
+      if (!screenShareSession) return;
+      io.to(`user:${to}`).emit("screenshare:answer", { from: userId, sdp });
+    });
+
+    socket.on(
+      "screenshare:ice-candidate",
+      (payload: { to?: string; candidate?: RTCIceCandidateInit }) => {
+        const to = payload?.to;
+        const candidate = payload?.candidate;
+        if (!to || !candidate) return;
+        if (!screenShareSession) return;
+        io.to(`user:${to}`).emit("screenshare:ice-candidate", { from: userId, candidate });
+      }
+    );
+
     socket.on("general:send", async (payload: { content: string }) => {
       const content = (payload?.content || "").trim();
       if (!content) return;
@@ -103,6 +228,21 @@ app.prepare().then(async () => {
     });
 
     socket.on("disconnect", () => {
+      if (screenShareSession) {
+        if (screenShareSession.hostId === userId) {
+          endScreenShareSession(io);
+        } else {
+          const wasViewer = screenShareSession.viewers.delete(userId);
+          const wasPending = screenShareSession.pending.delete(userId);
+          if (wasViewer) {
+            io.to(`user:${screenShareSession.hostId}`).emit("screenshare:viewer-left", { userId });
+          }
+          if (wasViewer || wasPending) {
+            broadcastScreenShareState(io);
+          }
+        }
+      }
+
       const count = (onlineCounts.get(userId) || 1) - 1;
       if (count <= 0) onlineCounts.delete(userId);
       else onlineCounts.set(userId, count);

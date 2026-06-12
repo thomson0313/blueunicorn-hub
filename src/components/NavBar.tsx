@@ -16,6 +16,7 @@ export function NavBar() {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/projects", label: "Projects" },
     { href: "/calendar", label: "Calendar" },
+    { href: "/screen-share", label: "Screen Share" },
   ];
 
   const projectSubLinks = [

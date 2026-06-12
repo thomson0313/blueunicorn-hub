@@ -16,6 +16,7 @@ import {
   IconDashboard,
   IconMembers,
   IconProjects,
+  IconScreenShare,
 } from "@/components/icons/NavIcons";
 
 type NavItem = { href: string; label: string; icon: ReactNode };
@@ -36,6 +37,7 @@ const APP_LINKS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: <IconDashboard /> },
   { href: "/admin/calendar", label: "Calendar", icon: <IconCalendar /> },
   { href: "/chat", label: "Chat", icon: <IconChat /> },
+  { href: "/screen-share", label: "Screen Share", icon: <IconScreenShare /> },
 ];
 
 export function AdminSidebar() {
