@@ -2,18 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
-import { useApp, useRealtimeMode } from "@/components/AppProvider";
+import { useApp } from "@/components/AppProvider";
+import { useScreenShareTransport } from "@/components/screen-share/useScreenShareTransport";
 import {
   EMPTY_SCREEN_SHARE_STATE,
-  ICE_SERVERS,
+  getIceServers,
   type ScreenShareState,
 } from "@/lib/screen-share-types";
 
 type JoinStatus = "idle" | "pending" | "approved" | "rejected";
 
 export function ScreenSharePanel() {
-  const { user, socket } = useApp();
-  const realtimeMode = useRealtimeMode();
+  const { user } = useApp();
   const isAdmin = user.role === "admin";
 
   const [state, setState] = useState<ScreenShareState>(EMPTY_SCREEN_SHARE_STATE);
@@ -28,6 +28,7 @@ export function ScreenSharePanel() {
   const hostPeerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const viewerPeerConnection = useRef<RTCPeerConnection | null>(null);
   const hostIdRef = useRef<string | null>(null);
+  const actionsRef = useRef<ReturnType<typeof useScreenShareTransport>["actions"] | null>(null);
 
   useEffect(() => {
     hostIdRef.current = state.host?.id ?? null;
@@ -64,16 +65,39 @@ export function ScreenSharePanel() {
     setError(null);
   }, [cleanupHostPeers, cleanupLocalStream, cleanupViewerPeer]);
 
-  const endShare = useCallback(() => {
-    socket?.emit("screenshare:end");
-    resetClient();
-  }, [resetClient, socket]);
+  const setupViewerPeer = useCallback(async () => {
+    if (viewerPeerConnection.current) return;
+
+    const pc = new RTCPeerConnection(getIceServers());
+    viewerPeerConnection.current = pc;
+
+    pc.ontrack = (event) => {
+      const [stream] = event.streams;
+      if (stream && remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = stream;
+        setStreamConnected(true);
+      }
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && hostIdRef.current && actionsRef.current) {
+        void actionsRef.current.sendIce(hostIdRef.current, event.candidate);
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        cleanupViewerPeer();
+      }
+    };
+  }, [cleanupViewerPeer]);
 
   const createHostPeerForViewer = useCallback(
     async (viewerId: string) => {
-      if (!socket || !localStreamRef.current || hostPeerConnections.current.has(viewerId)) return;
+      const actions = actionsRef.current;
+      if (!actions || !localStreamRef.current || hostPeerConnections.current.has(viewerId)) return;
 
-      const pc = new RTCPeerConnection(ICE_SERVERS);
+      const pc = new RTCPeerConnection(getIceServers());
       hostPeerConnections.current.set(viewerId, pc);
 
       localStreamRef.current.getTracks().forEach((track) => {
@@ -82,7 +106,7 @@ export function ScreenSharePanel() {
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit("screenshare:ice-candidate", { to: viewerId, candidate: event.candidate });
+          void actions.sendIce(viewerId, event.candidate);
         }
       };
 
@@ -95,60 +119,13 @@ export function ScreenSharePanel() {
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      socket.emit("screenshare:offer", { to: viewerId, sdp: offer });
+      await actions.sendOffer(viewerId, offer);
     },
-    [socket]
+    []
   );
 
-  const setupViewerPeer = useCallback(async () => {
-    if (!socket || viewerPeerConnection.current) return;
-
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    viewerPeerConnection.current = pc;
-
-    pc.ontrack = (event) => {
-      const [stream] = event.streams;
-      if (stream && remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-        setStreamConnected(true);
-      }
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && hostIdRef.current) {
-        socket.emit("screenshare:ice-candidate", {
-          to: hostIdRef.current,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-        cleanupViewerPeer();
-      }
-    };
-  }, [cleanupViewerPeer, socket]);
-
-  const startSharing = useCallback(async () => {
-    if (!socket || !isAdmin) return;
-    setError(null);
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-      stream.getVideoTracks()[0]?.addEventListener("ended", () => endShare());
-      socket.emit("screenshare:start");
-      setSharing(true);
-    } catch {
-      setError("Could not start screen sharing. Please allow screen capture.");
-    }
-  }, [endShare, isAdmin, socket]);
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const onState = (next: ScreenShareState) => {
+  const { ready, actions } = useScreenShareTransport({
+    onState: (next) => {
       setState(next);
       if (!next.active) resetClient();
       else if (
@@ -157,35 +134,30 @@ export function ScreenSharePanel() {
       ) {
         setJoinStatus("idle");
       }
-    };
-
-    const onAccepted = () => {
+    },
+    onAccepted: () => {
       setJoinStatus("approved");
       void setupViewerPeer();
-    };
-
-    const onRejected = () => setJoinStatus("rejected");
-
-    const onEnded = () => resetClient();
-
-    const onOffer = async (payload: { from: string; sdp: RTCSessionDescriptionInit }) => {
+    },
+    onRejected: () => setJoinStatus("rejected"),
+    onEnded: () => resetClient(),
+    onOffer: async (payload) => {
       if (isAdmin) return;
       await setupViewerPeer();
       const pc = viewerPeerConnection.current;
-      if (!pc) return;
+      const actions = actionsRef.current;
+      if (!pc || !actions) return;
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit("screenshare:answer", { to: payload.from, sdp: answer });
-    };
-
-    const onAnswer = async (payload: { from: string; sdp: RTCSessionDescriptionInit }) => {
+      await actions.sendAnswer(payload.from, answer);
+    },
+    onAnswer: async (payload) => {
       const pc = hostPeerConnections.current.get(payload.from);
       if (!pc) return;
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-    };
-
-    const onIce = async (payload: { from: string; candidate: RTCIceCandidateInit }) => {
+    },
+    onIce: async (payload) => {
       const pc = isAdmin
         ? hostPeerConnections.current.get(payload.from)
         : viewerPeerConnection.current;
@@ -195,34 +167,45 @@ export function ScreenSharePanel() {
       } catch {
         /* ignore stale candidates */
       }
-    };
-
-    const onViewerLeft = (payload: { userId: string }) => {
+    },
+    onViewerLeft: (payload) => {
       const pc = hostPeerConnections.current.get(payload.userId);
       pc?.close();
       hostPeerConnections.current.delete(payload.userId);
-    };
+    },
+  });
 
-    socket.on("screenshare:state", onState);
-    socket.on("screenshare:accepted", onAccepted);
-    socket.on("screenshare:rejected", onRejected);
-    socket.on("screenshare:ended", onEnded);
-    socket.on("screenshare:offer", onOffer);
-    socket.on("screenshare:answer", onAnswer);
-    socket.on("screenshare:ice-candidate", onIce);
-    socket.on("screenshare:viewer-left", onViewerLeft);
+  actionsRef.current = actions;
 
-    return () => {
-      socket.off("screenshare:state", onState);
-      socket.off("screenshare:accepted", onAccepted);
-      socket.off("screenshare:rejected", onRejected);
-      socket.off("screenshare:ended", onEnded);
-      socket.off("screenshare:offer", onOffer);
-      socket.off("screenshare:answer", onAnswer);
-      socket.off("screenshare:ice-candidate", onIce);
-      socket.off("screenshare:viewer-left", onViewerLeft);
-    };
-  }, [isAdmin, resetClient, setupViewerPeer, socket, user.sub]);
+  const endShare = useCallback(() => {
+    void actions.end();
+    resetClient();
+  }, [actions, resetClient]);
+
+  const startSharing = useCallback(async () => {
+    if (!ready || !isAdmin) return;
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => endShare());
+      try {
+        await actions.start();
+        setSharing(true);
+      } catch (startErr) {
+        cleanupLocalStream();
+        throw startErr;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not start screen sharing.";
+      setError(
+        message.includes("active")
+          ? message
+          : "Could not start screen sharing. Please allow screen capture."
+      );
+    }
+  }, [actions, cleanupLocalStream, endShare, isAdmin, ready]);
 
   useEffect(() => {
     if (!isHost || !sharing || !localStreamRef.current) return;
@@ -249,8 +232,8 @@ export function ScreenSharePanel() {
 
   useEffect(() => {
     return () => {
-      if (sharing && isHost) socket?.emit("screenshare:end");
-      else if (isViewer || isPending) socket?.emit("screenshare:leave");
+      if (sharing && isHost) void actionsRef.current?.end();
+      else if (isViewer || isPending) void actionsRef.current?.leave();
       cleanupLocalStream();
       cleanupHostPeers();
       cleanupViewerPeer();
@@ -258,15 +241,11 @@ export function ScreenSharePanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (realtimeMode !== "socket" || !socket) {
+  if (!ready) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
         <h1 className="text-xl font-semibold text-slate-900 mb-2">Screen Share</h1>
-        <p className="text-slate-500">
-          Screen sharing requires a live connection. Run the app with{" "}
-          <code className="text-sm bg-slate-100 px-1.5 py-0.5 rounded">npm run dev</code> (custom
-          server with Socket.IO).
-        </p>
+        <p className="text-slate-500">Connecting…</p>
       </div>
     );
   }
@@ -346,7 +325,7 @@ export function ScreenSharePanel() {
                     type="button"
                     onClick={() => {
                       setJoinStatus("pending");
-                      socket.emit("screenshare:request-join");
+                      void actions.requestJoin();
                     }}
                     className="px-5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition cursor-pointer"
                   >
@@ -363,7 +342,7 @@ export function ScreenSharePanel() {
                       type="button"
                       onClick={() => {
                         setJoinStatus("pending");
-                        socket.emit("screenshare:request-join");
+                        void actions.requestJoin();
                       }}
                       className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50 transition cursor-pointer"
                     >
@@ -422,14 +401,14 @@ export function ScreenSharePanel() {
                       <div className="flex gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={() => socket.emit("screenshare:accept", { userId: p.id })}
+                          onClick={() => void actions.accept(p.id)}
                           className="px-2.5 py-1 rounded-md bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 cursor-pointer"
                         >
                           Accept
                         </button>
                         <button
                           type="button"
-                          onClick={() => socket.emit("screenshare:reject", { userId: p.id })}
+                          onClick={() => void actions.reject(p.id)}
                           className="px-2.5 py-1 rounded-md border border-slate-300 text-slate-600 text-xs font-medium hover:bg-slate-50 cursor-pointer"
                         >
                           Reject
