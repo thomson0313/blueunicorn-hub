@@ -17,21 +17,31 @@ export const EMPTY_SCREEN_SHARE_STATE: ScreenShareState = {
   pendingRequests: [],
 };
 
-/** ICE servers — optional TURN via env for production NAT traversal. */
-export function getIceServers(): RTCConfiguration {
-  const iceServers: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+/** Init segment that primes a viewer's MediaSource — sent on host start and replayed to late joiners. */
+export type ScreenShareInit = {
+  mimeType: string;
+  data: ArrayBuffer;
+};
 
-  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
-  if (turnUrl) {
-    iceServers.push({
-      urls: turnUrl,
-      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
-      credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL,
-    });
-  }
+/**
+ * MediaRecorder mime types we try, in order of preference. VP9 gives the best
+ * quality-per-byte for screen content; VP8 is the broadest fallback.
+ */
+const MIME_CANDIDATES = [
+  'video/webm;codecs="vp9,opus"',
+  "video/webm;codecs=vp9",
+  'video/webm;codecs="vp8,opus"',
+  "video/webm;codecs=vp8",
+  "video/webm",
+];
 
-  return { iceServers };
+export function pickSupportedRecorderMime(): string | null {
+  if (typeof MediaRecorder === "undefined") return null;
+  return MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) ?? null;
 }
 
-/** @deprecated use getIceServers() */
-export const ICE_SERVERS: RTCConfiguration = getIceServers();
+/** How often the host's MediaRecorder emits a chunk. Smaller = lower latency, more overhead. */
+export const SCREEN_SHARE_TIMESLICE_MS = 500;
+
+/** Target host upload bitrate. 2.5 Mbps is enough for crisp 1080p slides/code. */
+export const SCREEN_SHARE_VIDEO_BPS = 2_500_000;
