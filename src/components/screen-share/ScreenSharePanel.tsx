@@ -8,7 +8,7 @@ import {
   EMPTY_SCREEN_SHARE_STATE,
   SCREEN_SHARE_TIMESLICE_MS,
   SCREEN_SHARE_VIDEO_BPS,
-  pickSupportedRecorderMime,
+  pickScreenShareMime,
   type ScreenShareState,
 } from "@/lib/screen-share-types";
 
@@ -31,12 +31,15 @@ export function ScreenSharePanel() {
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunkTimerRef = useRef<number | null>(null);
   const initSentRef = useRef(false);
 
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const pendingChunksRef = useRef<ArrayBuffer[]>([]);
+  const pendingInitRef = useRef<{ mimeType: string; data: ArrayBuffer } | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const isViewerRef = useRef(false);
 
   const actionsRef =
     useRef<ReturnType<typeof useScreenShareTransport>["actions"] | null>(null);
@@ -44,6 +47,8 @@ export function ScreenSharePanel() {
   const isHost = state.active && state.host?.id === user.sub;
   const isViewer = state.viewers.some((v) => v.id === user.sub);
   const isPending = state.pendingRequests.some((p) => p.id === user.sub);
+
+  isViewerRef.current = isViewer || joinStatus === "approved";
 
   // Callback refs guarantee the stream/source attaches whether the <video>
   // mounts before OR after the stream becomes available — this is the fix
@@ -61,10 +66,17 @@ export function ScreenSharePanel() {
     if (node && objectUrlRef.current && node.src !== objectUrlRef.current) {
       node.src = objectUrlRef.current;
       void node.play().catch(() => undefined);
+    } else if (node && pendingInitRef.current && !mediaSourceRef.current) {
+      // Init arrived before the <video> mounted — start playback now.
+      void tryStartViewerRef.current?.();
     }
   }, []);
 
   const cleanupHost = useCallback(() => {
+    if (chunkTimerRef.current !== null) {
+      window.clearInterval(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       try {
         recorderRef.current.stop();
@@ -81,6 +93,7 @@ export function ScreenSharePanel() {
 
   const cleanupViewer = useCallback(() => {
     pendingChunksRef.current = [];
+    pendingInitRef.current = null;
     const sb = sourceBufferRef.current;
     sourceBufferRef.current = null;
     const ms = mediaSourceRef.current;
@@ -140,49 +153,53 @@ export function ScreenSharePanel() {
           /* ignore */
         }
         pendingChunksRef.current.unshift(chunk);
+        return;
       }
+      console.error("[screenshare] appendBuffer failed", err);
+      pendingChunksRef.current.unshift(chunk);
     }
   }, []);
 
-  const ensureMediaSource = useCallback(
-    (mimeType: string) => {
-      // Reset any previous MediaSource so a host restart resyncs cleanly.
-      cleanupViewer();
+  const tryStartViewerRef = useRef<(() => void) | null>(null);
 
-      const ms = new MediaSource();
-      mediaSourceRef.current = ms;
-      const url = URL.createObjectURL(ms);
-      objectUrlRef.current = url;
+  const tryStartViewer = useCallback(() => {
+    if (isAdmin || !isViewerRef.current) return;
 
-      const video = remoteVideoRef.current;
-      if (video) {
-        video.src = url;
-        void video.play().catch(() => undefined);
-      }
+    const init = pendingInitRef.current;
+    const video = remoteVideoRef.current;
+    if (!init || !video || mediaSourceRef.current) return;
 
-      ms.addEventListener("sourceopen", () => {
-        if (sourceBufferRef.current || mediaSourceRef.current !== ms) return;
-        try {
-          const sb = ms.addSourceBuffer(mimeType);
-          // Play chunks in arrival order — late joiners don't need timestamp alignment.
-          sb.mode = "sequence";
-          sb.addEventListener("updateend", () => {
-            flushPending();
-            const v = remoteVideoRef.current;
-            if (v && v.paused) void v.play().catch(() => undefined);
-          });
-          sourceBufferRef.current = sb;
+    const ms = new MediaSource();
+    mediaSourceRef.current = ms;
+    const url = URL.createObjectURL(ms);
+    objectUrlRef.current = url;
+    video.src = url;
+    void video.play().catch(() => undefined);
+
+    ms.addEventListener("sourceopen", () => {
+      if (sourceBufferRef.current || mediaSourceRef.current !== ms) return;
+      try {
+        const sb = ms.addSourceBuffer(init.mimeType);
+        sb.mode = "sequence";
+        sb.addEventListener("updateend", () => {
           flushPending();
-        } catch (err) {
-          setError(
-            `Your browser can't play this stream (${mimeType}). Try Chrome or Edge.`
-          );
-          console.error("[screenshare] addSourceBuffer failed", err);
-        }
-      });
-    },
-    [cleanupViewer, flushPending]
-  );
+          const v = remoteVideoRef.current;
+          if (v && v.paused) void v.play().catch(() => undefined);
+        });
+        sourceBufferRef.current = sb;
+        pendingChunksRef.current.push(init.data);
+        flushPending();
+        setStreamConnected(true);
+      } catch (err) {
+        setError(
+          `Your browser can't play this stream (${init.mimeType}). Try Chrome or Edge.`
+        );
+        console.error("[screenshare] addSourceBuffer failed", err);
+      }
+    });
+  }, [flushPending, isAdmin]);
+
+  tryStartViewerRef.current = tryStartViewer;
 
   const { ready, actions } = useScreenShareTransport({
     onState: (next) => setState(next),
@@ -194,15 +211,12 @@ export function ScreenSharePanel() {
     },
     onInit: ({ mimeType, data }) => {
       if (isAdmin) return;
-      ensureMediaSource(mimeType);
-      pendingChunksRef.current.push(data);
-      flushPending();
-      setStreamConnected(true);
+      pendingInitRef.current = { mimeType, data };
+      tryStartViewer();
     },
     onChunk: (data) => {
       if (isAdmin) return;
-      // Drop chunks until the init segment has arrived & set up MediaSource.
-      if (!mediaSourceRef.current) return;
+      if (!sourceBufferRef.current && !pendingInitRef.current) return;
       pendingChunksRef.current.push(data);
       flushPending();
     },
@@ -225,10 +239,10 @@ export function ScreenSharePanel() {
     if (!ready || !isAdmin) return;
     setError(null);
 
-    const mimeType = pickSupportedRecorderMime();
+    const mimeType = pickScreenShareMime();
     if (!mimeType) {
       setError(
-        "Your browser can't record WebM. Use Chrome or Edge to host screen sharing."
+        "Your browser can't record or play WebM. Use Chrome or Edge to host screen sharing."
       );
       return;
     }
@@ -237,7 +251,7 @@ export function ScreenSharePanel() {
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: 30 },
-        audio: true,
+        audio: false,
       });
     } catch {
       setError("Could not start screen sharing. Please allow screen capture.");
@@ -285,7 +299,14 @@ export function ScreenSharePanel() {
 
     actions.start();
     setSharing(true);
-    recorder.start(SCREEN_SHARE_TIMESLICE_MS);
+
+    // start() without a timeslice + periodic requestData() produces a reliable
+    // WebM init segment on the first flush, then media clusters after that.
+    recorder.start();
+    recorder.requestData();
+    chunkTimerRef.current = window.setInterval(() => {
+      if (recorder.state === "recording") recorder.requestData();
+    }, SCREEN_SHARE_TIMESLICE_MS);
   }, [actions, endShare, isAdmin, ready]);
 
   // Keep join state in sync with server-broadcast state.
@@ -298,6 +319,13 @@ export function ScreenSharePanel() {
       setJoinStatus("idle");
     }
   }, [isPending, isViewer, joinStatus]);
+
+  // When the viewer <video> mounts after init was already received, start playback.
+  useEffect(() => {
+    if (!isAdmin && (isViewer || joinStatus === "approved")) {
+      tryStartViewer();
+    }
+  }, [isAdmin, isViewer, joinStatus, tryStartViewer]);
 
   useEffect(() => {
     const onFsChange = () =>
@@ -422,6 +450,7 @@ export function ScreenSharePanel() {
                 <video
                   ref={attachRemoteVideo}
                   autoPlay
+                  muted
                   playsInline
                   className="w-full h-full object-contain"
                 />

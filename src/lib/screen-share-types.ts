@@ -24,23 +24,44 @@ export type ScreenShareInit = {
 };
 
 /**
- * MediaRecorder mime types we prefer, in order. VP9 gives the best
- * quality-per-byte for screen content; VP8 is the broadest fallback.
+ * Codec strings we prefer, in order. Must be supported by BOTH MediaRecorder
+ * (host) and MediaSource (viewers) — a mismatch here causes a black screen.
  */
 const MIME_CANDIDATES = [
-  'video/webm;codecs="vp9,opus"',
-  "video/webm;codecs=vp9",
-  'video/webm;codecs="vp8,opus"',
   "video/webm;codecs=vp8",
+  'video/webm;codecs="vp8"',
+  "video/webm;codecs=vp9",
+  'video/webm;codecs="vp9"',
   "video/webm",
 ];
 
-export function pickSupportedRecorderMime(): string | null {
-  if (typeof MediaRecorder === "undefined") return null;
-  return MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) ?? null;
+/** Pick a mime type the host can record AND viewers can play via MediaSource. */
+export function pickScreenShareMime(): string | null {
+  if (typeof MediaRecorder === "undefined" || typeof MediaSource === "undefined") {
+    return null;
+  }
+  return (
+    MIME_CANDIDATES.find(
+      (m) => MediaRecorder.isTypeSupported(m) && MediaSource.isTypeSupported(m)
+    ) ?? null
+  );
 }
 
-/** How often the host's MediaRecorder emits a chunk. Smaller = lower latency, more overhead. */
+/** Normalize Socket.IO binary payloads to a standalone ArrayBuffer. */
+export function toArrayBuffer(data: unknown): ArrayBuffer | null {
+  if (!data) return null;
+  if (data instanceof ArrayBuffer) return data;
+  if (ArrayBuffer.isView(data)) {
+    const view = data as ArrayBufferView;
+    return view.buffer.slice(
+      view.byteOffset,
+      view.byteOffset + view.byteLength
+    ) as ArrayBuffer;
+  }
+  return null;
+}
+
+/** How often the host requests the next MediaRecorder chunk. */
 export const SCREEN_SHARE_TIMESLICE_MS = 500;
 
 /** Target host upload bitrate. ~2.5 Mbps is enough for crisp 1080p slides/code. */

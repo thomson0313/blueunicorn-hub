@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useApp } from "@/components/AppProvider";
-import type { ScreenShareInit, ScreenShareState } from "@/lib/screen-share-types";
+import { toArrayBuffer, type ScreenShareInit, type ScreenShareState } from "@/lib/screen-share-types";
 
 export type ScreenShareHandlers = {
   onState: (state: ScreenShareState) => void;
@@ -33,8 +33,19 @@ export function useScreenShareTransport(handlers: ScreenShareHandlers) {
     const onRejected = () => h().onRejected();
     const onEnded = () => h().onEnded();
     const onViewerLeft = (payload: { userId: string }) => h().onViewerLeft(payload);
-    const onInit = (payload: { mimeType: string; data: ArrayBuffer }) => h().onInit(payload);
-    const onChunk = (data: ArrayBuffer) => h().onChunk(data);
+
+    const onInit = (payload: { mimeType?: string; data?: unknown }) => {
+      const mimeType = typeof payload?.mimeType === "string" ? payload.mimeType : "";
+      const data = toArrayBuffer(payload?.data);
+      if (!mimeType || !data) return;
+      h().onInit({ mimeType, data });
+    };
+
+    const onChunk = (data: unknown) => {
+      const buffer = toArrayBuffer(data);
+      if (!buffer) return;
+      h().onChunk(buffer);
+    };
 
     socket.on("screenshare:state", onState);
     socket.on("screenshare:accepted", onAccepted);
