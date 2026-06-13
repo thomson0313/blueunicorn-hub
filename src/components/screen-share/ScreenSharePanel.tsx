@@ -6,7 +6,9 @@ import { useApp } from "@/components/AppProvider";
 import { useScreenShareTransport } from "@/components/screen-share/useScreenShareTransport";
 import {
   EMPTY_SCREEN_SHARE_STATE,
-  getIceServers,
+  SCREEN_SHARE_TIMESLICE_MS,
+  SCREEN_SHARE_VIDEO_BPS,
+  pickSupportedRecorderMime,
   type ScreenShareState,
 } from "@/lib/screen-share-types";
 
@@ -20,235 +22,330 @@ export function ScreenSharePanel() {
   const [joinStatus, setJoinStatus] = useState<JoinStatus>("idle");
   const [sharing, setSharing] = useState(false);
   const [streamConnected, setStreamConnected] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const hostPeerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const viewerPeerConnection = useRef<RTCPeerConnection | null>(null);
-  const hostIdRef = useRef<string | null>(null);
-  const actionsRef = useRef<ReturnType<typeof useScreenShareTransport>["actions"] | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  useEffect(() => {
-    hostIdRef.current = state.host?.id ?? null;
-  }, [state.host?.id]);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const initSentRef = useRef(false);
+
+  const mediaSourceRef = useRef<MediaSource | null>(null);
+  const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const pendingChunksRef = useRef<ArrayBuffer[]>([]);
+  const objectUrlRef = useRef<string | null>(null);
+
+  const actionsRef =
+    useRef<ReturnType<typeof useScreenShareTransport>["actions"] | null>(null);
 
   const isHost = state.active && state.host?.id === user.sub;
   const isViewer = state.viewers.some((v) => v.id === user.sub);
   const isPending = state.pendingRequests.some((p) => p.id === user.sub);
 
-  const cleanupLocalStream = useCallback(() => {
+  // Callback refs guarantee the stream/source attaches whether the <video>
+  // mounts before OR after the stream becomes available — this is the fix
+  // for the host preview not showing up.
+  const attachLocalVideo = useCallback((node: HTMLVideoElement | null) => {
+    localVideoRef.current = node;
+    if (node && localStreamRef.current && node.srcObject !== localStreamRef.current) {
+      node.srcObject = localStreamRef.current;
+      void node.play().catch(() => undefined);
+    }
+  }, []);
+
+  const attachRemoteVideo = useCallback((node: HTMLVideoElement | null) => {
+    remoteVideoRef.current = node;
+    if (node && objectUrlRef.current && node.src !== objectUrlRef.current) {
+      node.src = objectUrlRef.current;
+      void node.play().catch(() => undefined);
+    }
+  }, []);
+
+  const cleanupHost = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      try {
+        recorderRef.current.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    recorderRef.current = null;
+    initSentRef.current = false;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
   }, []);
 
-  const cleanupHostPeers = useCallback(() => {
-    hostPeerConnections.current.forEach((pc) => pc.close());
-    hostPeerConnections.current.clear();
-  }, []);
-
-  const cleanupViewerPeer = useCallback(() => {
-    viewerPeerConnection.current?.close();
-    viewerPeerConnection.current = null;
+  const cleanupViewer = useCallback(() => {
+    pendingChunksRef.current = [];
+    const sb = sourceBufferRef.current;
+    sourceBufferRef.current = null;
+    const ms = mediaSourceRef.current;
+    mediaSourceRef.current = null;
+    if (sb && ms && ms.readyState === "open") {
+      try {
+        ms.removeSourceBuffer(sb);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (ms && ms.readyState === "open") {
+      try {
+        ms.endOfStream();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.removeAttribute("src");
+      remoteVideoRef.current.load();
+    }
     setStreamConnected(false);
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
   }, []);
 
   const resetClient = useCallback(() => {
-    cleanupLocalStream();
-    cleanupHostPeers();
-    cleanupViewerPeer();
+    cleanupHost();
+    cleanupViewer();
     setSharing(false);
     setJoinStatus("idle");
-    setError(null);
-  }, [cleanupHostPeers, cleanupLocalStream, cleanupViewerPeer]);
+  }, [cleanupHost, cleanupViewer]);
 
-  const setupViewerPeer = useCallback(async () => {
-    if (viewerPeerConnection.current) return;
-
-    const pc = new RTCPeerConnection(getIceServers());
-    viewerPeerConnection.current = pc;
-
-    pc.ontrack = (event) => {
-      const [stream] = event.streams;
-      if (stream && remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-        setStreamConnected(true);
+  /** Drain queued chunks into the SourceBuffer once it's idle. */
+  const flushPending = useCallback(() => {
+    const sb = sourceBufferRef.current;
+    if (!sb || sb.updating) return;
+    const chunk = pendingChunksRef.current.shift();
+    if (!chunk) return;
+    try {
+      sb.appendBuffer(chunk);
+    } catch (err) {
+      if (
+        err instanceof DOMException &&
+        err.name === "QuotaExceededError" &&
+        sb.buffered.length > 0
+      ) {
+        // Trim oldest 5 s so the buffer can keep accepting live data.
+        const start = sb.buffered.start(0);
+        const end = sb.buffered.end(sb.buffered.length - 1);
+        try {
+          sb.remove(start, Math.max(start, end - 5));
+        } catch {
+          /* ignore */
+        }
+        pendingChunksRef.current.unshift(chunk);
       }
-    };
+    }
+  }, []);
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate && hostIdRef.current && actionsRef.current) {
-        void actionsRef.current.sendIce(hostIdRef.current, event.candidate);
+  const ensureMediaSource = useCallback(
+    (mimeType: string) => {
+      // Reset any previous MediaSource so a host restart resyncs cleanly.
+      cleanupViewer();
+
+      const ms = new MediaSource();
+      mediaSourceRef.current = ms;
+      const url = URL.createObjectURL(ms);
+      objectUrlRef.current = url;
+
+      const video = remoteVideoRef.current;
+      if (video) {
+        video.src = url;
+        void video.play().catch(() => undefined);
       }
-    };
 
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-        cleanupViewerPeer();
-      }
-    };
-  }, [cleanupViewerPeer]);
-
-  const createHostPeerForViewer = useCallback(
-    async (viewerId: string) => {
-      const actions = actionsRef.current;
-      if (!actions || !localStreamRef.current || hostPeerConnections.current.has(viewerId)) return;
-
-      const pc = new RTCPeerConnection(getIceServers());
-      hostPeerConnections.current.set(viewerId, pc);
-
-      localStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localStreamRef.current!);
+      ms.addEventListener("sourceopen", () => {
+        if (sourceBufferRef.current || mediaSourceRef.current !== ms) return;
+        try {
+          const sb = ms.addSourceBuffer(mimeType);
+          // Play chunks in arrival order — late joiners don't need timestamp alignment.
+          sb.mode = "sequence";
+          sb.addEventListener("updateend", () => {
+            flushPending();
+            const v = remoteVideoRef.current;
+            if (v && v.paused) void v.play().catch(() => undefined);
+          });
+          sourceBufferRef.current = sb;
+          flushPending();
+        } catch (err) {
+          setError(
+            `Your browser can't play this stream (${mimeType}). Try Chrome or Edge.`
+          );
+          console.error("[screenshare] addSourceBuffer failed", err);
+        }
       });
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          void actions.sendIce(viewerId, event.candidate);
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-          pc.close();
-          hostPeerConnections.current.delete(viewerId);
-        }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await actions.sendOffer(viewerId, offer);
     },
-    []
+    [cleanupViewer, flushPending]
   );
 
   const { ready, actions } = useScreenShareTransport({
-    onState: (next) => {
-      setState(next);
-      if (!next.active) resetClient();
-      else if (
-        !next.viewers.some((v) => v.id === user.sub) &&
-        !next.pendingRequests.some((p) => p.id === user.sub)
-      ) {
-        setJoinStatus("idle");
-      }
-    },
-    onAccepted: () => {
-      setJoinStatus("approved");
-      void setupViewerPeer();
-    },
+    onState: (next) => setState(next),
+    onAccepted: () => setJoinStatus("approved"),
     onRejected: () => setJoinStatus("rejected"),
     onEnded: () => resetClient(),
-    onOffer: async (payload) => {
+    onViewerLeft: () => {
+      /* host-only signal; no per-peer state because chunks are broadcast through the server. */
+    },
+    onInit: ({ mimeType, data }) => {
       if (isAdmin) return;
-      await setupViewerPeer();
-      const pc = viewerPeerConnection.current;
-      const actions = actionsRef.current;
-      if (!pc || !actions) return;
-      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await actions.sendAnswer(payload.from, answer);
+      ensureMediaSource(mimeType);
+      pendingChunksRef.current.push(data);
+      flushPending();
+      setStreamConnected(true);
     },
-    onAnswer: async (payload) => {
-      const pc = hostPeerConnections.current.get(payload.from);
-      if (!pc) return;
-      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-    },
-    onIce: async (payload) => {
-      const pc = isAdmin
-        ? hostPeerConnections.current.get(payload.from)
-        : viewerPeerConnection.current;
-      if (!pc) return;
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
-      } catch {
-        /* ignore stale candidates */
-      }
-    },
-    onViewerLeft: (payload) => {
-      const pc = hostPeerConnections.current.get(payload.userId);
-      pc?.close();
-      hostPeerConnections.current.delete(payload.userId);
+    onChunk: (data) => {
+      if (isAdmin) return;
+      // Drop chunks until the init segment has arrived & set up MediaSource.
+      if (!mediaSourceRef.current) return;
+      pendingChunksRef.current.push(data);
+      flushPending();
     },
   });
 
   actionsRef.current = actions;
 
   const endShare = useCallback(() => {
-    void actions.end();
+    actions.end();
     resetClient();
   }, [actions, resetClient]);
+
+  const leaveSession = useCallback(() => {
+    actions.leave();
+    cleanupViewer();
+    setJoinStatus("idle");
+  }, [actions, cleanupViewer]);
 
   const startSharing = useCallback(async () => {
     if (!ready || !isAdmin) return;
     setError(null);
+
+    const mimeType = pickSupportedRecorderMime();
+    if (!mimeType) {
+      setError(
+        "Your browser can't record WebM. Use Chrome or Edge to host screen sharing."
+      );
+      return;
+    }
+
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-      stream.getVideoTracks()[0]?.addEventListener("ended", () => endShare());
-      try {
-        await actions.start();
-        setSharing(true);
-      } catch (startErr) {
-        cleanupLocalStream();
-        throw startErr;
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 30 },
+        audio: true,
+      });
+    } catch {
+      setError("Could not start screen sharing. Please allow screen capture.");
+      return;
+    }
+
+    localStreamRef.current = stream;
+    // Attach immediately if the preview <video> is already mounted; otherwise
+    // attachLocalVideo will pick the stream up when it mounts.
+    const v = localVideoRef.current;
+    if (v) {
+      v.srcObject = stream;
+      void v.play().catch(() => undefined);
+    }
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => endShare());
+
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: SCREEN_SHARE_VIDEO_BPS,
+      });
+    } catch (err) {
+      setError("Could not start recording the screen.");
+      stream.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+      console.error("[screenshare] MediaRecorder failed", err);
+      return;
+    }
+
+    recorderRef.current = recorder;
+    initSentRef.current = false;
+
+    recorder.ondataavailable = async (event) => {
+      if (!event.data || event.data.size === 0) return;
+      const buffer = await event.data.arrayBuffer();
+      if (!initSentRef.current) {
+        actions.sendInit(mimeType, buffer);
+        initSentRef.current = true;
+      } else {
+        actions.sendChunk(buffer);
+      }
+    };
+    recorder.onerror = () => endShare();
+
+    actions.start();
+    setSharing(true);
+    recorder.start(SCREEN_SHARE_TIMESLICE_MS);
+  }, [actions, endShare, isAdmin, ready]);
+
+  // Keep join state in sync with server-broadcast state.
+  useEffect(() => {
+    if (isPending) {
+      setJoinStatus("pending");
+    } else if (isViewer && joinStatus !== "approved") {
+      setJoinStatus("approved");
+    } else if (!isViewer && !isPending && joinStatus !== "idle" && joinStatus !== "rejected") {
+      setJoinStatus("idle");
+    }
+  }, [isPending, isViewer, joinStatus]);
+
+  useEffect(() => {
+    const onFsChange = () =>
+      setFullscreen(document.fullscreenElement === stageRef.current);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    const el = stageRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement === el) {
+        await document.exitFullscreen();
+      } else {
+        await el.requestFullscreen();
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not start screen sharing.";
-      setError(
-        message.includes("active")
-          ? message
-          : "Could not start screen sharing. Please allow screen capture."
-      );
+      console.error("[screenshare] fullscreen toggle failed", err);
     }
-  }, [actions, cleanupLocalStream, endShare, isAdmin, ready]);
+  }, []);
 
-  useEffect(() => {
-    if (!isHost || !sharing || !localStreamRef.current) return;
-    for (const viewer of state.viewers) {
-      if (!hostPeerConnections.current.has(viewer.id)) {
-        void createHostPeerForViewer(viewer.id);
-      }
-    }
-    for (const id of [...hostPeerConnections.current.keys()]) {
-      if (!state.viewers.some((v) => v.id === id)) {
-        hostPeerConnections.current.get(id)?.close();
-        hostPeerConnections.current.delete(id);
-      }
-    }
-  }, [createHostPeerForViewer, isHost, sharing, state.viewers]);
-
-  useEffect(() => {
-    if (isPending) setJoinStatus("pending");
-    if (isViewer && joinStatus !== "approved") {
-      setJoinStatus("approved");
-      void setupViewerPeer();
-    }
-  }, [isPending, isViewer, joinStatus, setupViewerPeer]);
-
+  // Cleanup on unmount — always reads the latest action snapshot.
   useEffect(() => {
     return () => {
-      if (sharing && isHost) void actionsRef.current?.end();
-      else if (isViewer || isPending) void actionsRef.current?.leave();
-      cleanupLocalStream();
-      cleanupHostPeers();
-      cleanupViewerPeer();
+      if (sharing && isHost) actionsRef.current?.end();
+      else if (isViewer || isPending) actionsRef.current?.leave();
+      cleanupHost();
+      cleanupViewer();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!ready) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center max-w-lg mx-auto">
         <h1 className="text-xl font-semibold text-slate-900 mb-2">Screen Share</h1>
-        <p className="text-slate-500">Connecting…</p>
+        <p className="text-slate-500 text-sm">
+          Connecting to the screen-share server… If this persists, the deployment must
+          run the custom Node server (Socket.IO) — not a serverless platform.
+        </p>
       </div>
     );
   }
+
+  const showHostStage = isHost || sharing;
+  const showViewerStage = !isHost && (isViewer || joinStatus === "approved");
+  const showAnyStage = showHostStage || showViewerStage;
 
   return (
     <div className="space-y-4">
@@ -257,19 +354,40 @@ export function ScreenSharePanel() {
           <h1 className="text-2xl font-bold text-slate-900">Screen Share</h1>
           <p className="text-slate-500 text-sm">
             {isAdmin
-              ? "Host a screen share session for members."
+              ? "Host a live screen share for members."
               : "Join the admin's live screen share."}
           </p>
         </div>
-        {(isHost || sharing) && (
-          <button
-            type="button"
-            onClick={endShare}
-            className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition cursor-pointer"
-          >
-            End session
-          </button>
-        )}
+
+        <div className="flex items-center gap-2">
+          {showAnyStage && (
+            <button
+              type="button"
+              onClick={() => void toggleFullscreen()}
+              className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 transition cursor-pointer"
+            >
+              {fullscreen ? "Exit full screen" : "Full screen"}
+            </button>
+          )}
+          {(isHost || sharing) && (
+            <button
+              type="button"
+              onClick={endShare}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition cursor-pointer"
+            >
+              End session
+            </button>
+          )}
+          {!isAdmin && (isViewer || isPending) && (
+            <button
+              type="button"
+              onClick={leaveSession}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition cursor-pointer"
+            >
+              Leave session
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -284,93 +402,87 @@ export function ScreenSharePanel() {
             <h2 className="font-semibold text-slate-900">Screen</h2>
           </div>
           <div className="p-4">
-            {isHost || sharing ? (
-              <div className="relative aspect-video bg-slate-900 rounded-lg overflow-hidden">
+            <div
+              ref={stageRef}
+              className={
+                fullscreen
+                  ? "fixed inset-0 z-50 bg-black flex items-center justify-center"
+                  : "relative aspect-video bg-slate-900 rounded-lg overflow-hidden"
+              }
+            >
+              {showHostStage ? (
                 <video
-                  ref={localVideoRef}
+                  ref={attachLocalVideo}
                   autoPlay
                   muted
                   playsInline
                   className="w-full h-full object-contain"
                 />
-                {!sharing && (
-                  <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm">
-                    Starting…
-                  </div>
-                )}
-              </div>
-            ) : isViewer || joinStatus === "approved" ? (
-              <div className="relative aspect-video bg-slate-900 rounded-lg overflow-hidden">
+              ) : showViewerStage ? (
                 <video
-                  ref={remoteVideoRef}
+                  ref={attachRemoteVideo}
                   autoPlay
                   playsInline
                   className="w-full h-full object-contain"
                 />
-                {!streamConnected && (
-                  <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm">
-                    Connecting to stream…
-                  </div>
-                )}
-              </div>
-            ) : state.active && state.host ? (
-              <div className="aspect-video bg-slate-50 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center gap-4 p-6">
-                <Avatar name={state.host.name} size={56} />
-                <div className="text-center">
-                  <p className="font-medium text-slate-900">{state.host.name} is sharing</p>
-                  <p className="text-sm text-slate-500 mt-1">Request access to view the screen</p>
+              ) : state.active && state.host ? (
+                <JoinCallToAction
+                  hostName={state.host.name}
+                  joinStatus={joinStatus}
+                  onJoin={() => {
+                    setJoinStatus("pending");
+                    actions.requestJoin();
+                  }}
+                />
+              ) : isAdmin ? (
+                <StartCallToAction onStart={() => void startSharing()} />
+              ) : (
+                <p className="text-slate-300 text-sm text-center px-6 m-auto">
+                  No screen share session is active right now.
+                </p>
+              )}
+
+              {showHostStage && !sharing && (
+                <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm pointer-events-none">
+                  Starting…
                 </div>
-                {joinStatus === "idle" && (
+              )}
+              {showViewerStage && !streamConnected && (
+                <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm pointer-events-none">
+                  Waiting for the host's stream…
+                </div>
+              )}
+
+              {fullscreen && (
+                <div className="absolute top-4 right-4 flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setJoinStatus("pending");
-                      void actions.requestJoin();
-                    }}
-                    className="px-5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition cursor-pointer"
+                    onClick={() => void toggleFullscreen()}
+                    className="px-3 py-1.5 rounded-lg bg-white/15 text-white text-xs font-medium hover:bg-white/25 transition cursor-pointer"
                   >
-                    Join
+                    Exit full screen
                   </button>
-                )}
-                {joinStatus === "pending" && (
-                  <p className="text-sm text-amber-600 font-medium">Waiting for admin approval…</p>
-                )}
-                {joinStatus === "rejected" && (
-                  <div className="text-center space-y-2">
-                    <p className="text-sm text-red-600">Your request was declined.</p>
+                  {(isHost || sharing) && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setJoinStatus("pending");
-                        void actions.requestJoin();
-                      }}
-                      className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50 transition cursor-pointer"
+                      onClick={endShare}
+                      className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition cursor-pointer"
                     >
-                      Request again
+                      End session
                     </button>
-                  </div>
-                )}
-              </div>
-            ) : isAdmin ? (
-              <div className="aspect-video bg-slate-50 rounded-lg border border-dashed border-slate-200 flex flex-col items-center justify-center gap-4 p-6">
-                <p className="text-slate-600 text-sm text-center">
-                  No active session. Start sharing your screen with members.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void startSharing()}
-                  className="px-5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition cursor-pointer"
-                >
-                  Start screen share
-                </button>
-              </div>
-            ) : (
-              <div className="aspect-video bg-slate-50 rounded-lg border border-dashed border-slate-200 flex items-center justify-center p-6">
-                <p className="text-slate-500 text-sm text-center">
-                  No screen share session is active. Check back when an admin starts sharing.
-                </p>
-              </div>
-            )}
+                  )}
+                  {!isAdmin && (isViewer || isPending) && (
+                    <button
+                      type="button"
+                      onClick={leaveSession}
+                      className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition cursor-pointer"
+                    >
+                      Leave
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
@@ -401,14 +513,14 @@ export function ScreenSharePanel() {
                       <div className="flex gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={() => void actions.accept(p.id)}
+                          onClick={() => actions.accept(p.id)}
                           className="px-2.5 py-1 rounded-md bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 cursor-pointer"
                         >
                           Accept
                         </button>
                         <button
                           type="button"
-                          onClick={() => void actions.reject(p.id)}
+                          onClick={() => actions.reject(p.id)}
                           className="px-2.5 py-1 rounded-md border border-slate-300 text-slate-600 text-xs font-medium hover:bg-slate-50 cursor-pointer"
                         >
                           Reject
@@ -443,6 +555,68 @@ export function ScreenSharePanel() {
   );
 }
 
+function StartCallToAction({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 p-6 text-center m-auto">
+      <p className="text-slate-300 text-sm max-w-xs">
+        Start sharing your screen. Members can request to join and you'll see their
+        request live.
+      </p>
+      <button
+        type="button"
+        onClick={onStart}
+        className="px-5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition cursor-pointer"
+      >
+        Start screen share
+      </button>
+    </div>
+  );
+}
+
+function JoinCallToAction({
+  hostName,
+  joinStatus,
+  onJoin,
+}: {
+  hostName: string;
+  joinStatus: JoinStatus;
+  onJoin: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 p-6 text-center m-auto">
+      <Avatar name={hostName} size={56} />
+      <div>
+        <p className="font-medium text-white">{hostName} is sharing</p>
+        <p className="text-sm text-slate-300 mt-1">Request access to view the screen</p>
+      </div>
+      {joinStatus === "idle" && (
+        <button
+          type="button"
+          onClick={onJoin}
+          className="px-5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition cursor-pointer"
+        >
+          Join
+        </button>
+      )}
+      {joinStatus === "pending" && (
+        <p className="text-sm text-amber-300 font-medium">Waiting for admin approval…</p>
+      )}
+      {joinStatus === "rejected" && (
+        <div className="space-y-2">
+          <p className="text-sm text-red-300">Your request was declined.</p>
+          <button
+            type="button"
+            onClick={onJoin}
+            className="px-4 py-2 rounded-lg border border-white/40 text-white text-sm font-medium hover:bg-white/10 transition cursor-pointer"
+          >
+            Request again
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ParticipantRow({
   name,
   badge,
@@ -453,7 +627,11 @@ function ParticipantRow({
   compact?: boolean;
 }) {
   return (
-    <div className={`flex items-center gap-2 ${compact ? "" : "rounded-lg bg-slate-50 px-3 py-2"}`}>
+    <div
+      className={`flex items-center gap-2 ${
+        compact ? "" : "rounded-lg bg-slate-50 px-3 py-2"
+      }`}
+    >
       <Avatar name={name} size={compact ? 28 : 32} />
       <span className="text-sm font-medium text-slate-800 truncate">{name}</span>
       {badge && (
