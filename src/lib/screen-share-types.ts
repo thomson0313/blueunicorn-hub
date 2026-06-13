@@ -17,70 +17,55 @@ export const EMPTY_SCREEN_SHARE_STATE: ScreenShareState = {
   pendingRequests: [],
 };
 
-/** WebM init segment + its codec — sent on host start and replayed to late joiners. */
-export type ScreenShareInit = {
-  mimeType: string;
-  data: ArrayBuffer;
+/**
+ * STUN + (optional) TURN configuration for WebRTC.
+ *
+ * STUN alone works when both peers can reach the public internet without
+ * symmetric NAT. TURN is required for restrictive corporate/mobile networks
+ * and is what makes screen share "just work" everywhere.
+ *
+ * Configure via env vars (exposed to the browser by Next.js):
+ *   NEXT_PUBLIC_TURN_URL          e.g. "turn:turn.example.com:3478"
+ *   NEXT_PUBLIC_TURN_USERNAME     coturn user
+ *   NEXT_PUBLIC_TURN_CREDENTIAL   coturn password
+ *
+ * Multiple TURN URLs may be supplied comma-separated (UDP + TCP + TLS).
+ */
+export function getIceServers(): RTCConfiguration {
+  const iceServers: RTCIceServer[] = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ];
+
+  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+  const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME;
+  const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+
+  if (turnUrl && turnUsername && turnCredential) {
+    const urls = turnUrl
+      .split(",")
+      .map((u) => u.trim())
+      .filter(Boolean);
+    iceServers.push({
+      urls,
+      username: turnUsername,
+      credential: turnCredential,
+    });
+  }
+
+  return {
+    iceServers,
+    // Required for screen share over restrictive networks: lets the browser
+    // gather TURN candidates immediately instead of after the first failure.
+    iceCandidatePoolSize: 4,
+  };
+}
+
+/** Payloads on the wire — kept tiny so they stay readable on the server too. */
+export type ScreenShareSignalEnvelope<T> = {
+  from: string;
+  data: T;
 };
 
-/**
- * Codec strings we prefer, in order. Must be supported by BOTH MediaRecorder
- * (host) and MediaSource (viewers) — a mismatch here causes a black screen.
- */
-const MIME_CANDIDATES = [
-  "video/webm;codecs=vp8",
-  'video/webm;codecs="vp8"',
-  "video/webm;codecs=vp9",
-  'video/webm;codecs="vp9"',
-  "video/webm",
-];
-
-/** Pick a mime type the host can record AND viewers can play via MediaSource. */
-export function pickScreenShareMime(): string | null {
-  if (typeof MediaRecorder === "undefined" || typeof MediaSource === "undefined") {
-    return null;
-  }
-  return (
-    MIME_CANDIDATES.find(
-      (m) => MediaRecorder.isTypeSupported(m) && MediaSource.isTypeSupported(m)
-    ) ?? null
-  );
-}
-
-/** Normalize Socket.IO binary payloads to a standalone ArrayBuffer. */
-export function toArrayBuffer(data: unknown): ArrayBuffer | null {
-  if (!data) return null;
-  if (data instanceof ArrayBuffer) return data;
-  if (ArrayBuffer.isView(data)) {
-    const view = data as ArrayBufferView;
-    return view.buffer.slice(
-      view.byteOffset,
-      view.byteOffset + view.byteLength
-    ) as ArrayBuffer;
-  }
-  return null;
-}
-
-/** How often the host requests the next MediaRecorder chunk. Smaller = lower latency. */
-export const SCREEN_SHARE_TIMESLICE_MS = 200;
-
-/** Target host upload bitrate. ~2.5 Mbps is enough for crisp 1080p slides/code. */
-export const SCREEN_SHARE_VIDEO_BPS = 2_500_000;
-
-/** Capture framerate. 15 fps is fine for slides/code and halves bandwidth + cluster size. */
-export const SCREEN_SHARE_FRAME_RATE = 15;
-
-/**
- * Viewer "live sync" thresholds — gap (seconds) between playhead and the live
- * edge of the SourceBuffer. The viewer speeds up or seeks to stay near live.
- */
-export const SCREEN_SHARE_LIVE_SYNC = {
-  /** Above this gap, jump straight to the live edge. */
-  jumpThreshold: 3,
-  /** Above this gap, play 1.1× to catch up smoothly. */
-  catchUpThreshold: 1.2,
-  /** Land this far behind the live edge after a jump (avoid stalls). */
-  targetOffset: 0.4,
-  /** How often to check the gap. */
-  checkIntervalMs: 750,
-} as const;
+export type SdpSignal = { sdp: RTCSessionDescriptionInit };
+export type IceSignal = { candidate: RTCIceCandidateInit };

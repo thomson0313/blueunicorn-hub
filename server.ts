@@ -28,16 +28,11 @@ function onlineUserIds(): string[] {
   return [...onlineCounts.keys()];
 }
 
-const VIEWER_ROOM = "screenshare:viewers";
-
-type InitSegment = { mimeType: string; data: Buffer };
-
 type ScreenShareSession = {
   hostId: string;
   hostName: string;
   viewers: Map<string, string>;
   pending: Map<string, string>;
-  initSegment: InitSegment | null;
 };
 
 let screenShareSession: ScreenShareSession | null = null;
@@ -62,23 +57,11 @@ function broadcastScreenShareState(io: SocketIOServer) {
   io.emit("screenshare:state", serializeScreenShareState());
 }
 
-async function endScreenShareSession(io: SocketIOServer) {
+function endScreenShareSession(io: SocketIOServer) {
   if (!screenShareSession) return;
   screenShareSession = null;
-  const sockets = await io.in(VIEWER_ROOM).fetchSockets();
-  for (const s of sockets) s.leave(VIEWER_ROOM);
   broadcastScreenShareState(io);
   io.emit("screenshare:ended");
-}
-
-function toBuffer(value: unknown): Buffer | null {
-  if (!value) return null;
-  if (Buffer.isBuffer(value)) return value;
-  if (value instanceof ArrayBuffer) return Buffer.from(value);
-  if (ArrayBuffer.isView(value)) {
-    return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
-  }
-  return null;
 }
 
 app.prepare().then(async () => {
@@ -93,8 +76,6 @@ app.prepare().then(async () => {
 
   const io = new SocketIOServer(httpServer, {
     path: "/socket.io",
-    // Screen-share chunks at 2.5 Mbps × 500 ms ≈ 160 KB — give plenty of headroom.
-    maxHttpBufferSize: 16 * 1024 * 1024,
   });
 
   // Authenticate every socket using the session cookie.
@@ -125,18 +106,6 @@ app.prepare().then(async () => {
 
     socket.emit("screenshare:state", serializeScreenShareState());
 
-    // If this socket belongs to a current viewer (e.g. tab refresh / second tab),
-    // resume the stream by joining the viewer room and replaying the init segment.
-    if (screenShareSession?.viewers.has(userId)) {
-      socket.join(VIEWER_ROOM);
-      if (screenShareSession.initSegment) {
-        socket.emit("screenshare:init", {
-          mimeType: screenShareSession.initSegment.mimeType,
-          data: screenShareSession.initSegment.data,
-        });
-      }
-    }
-
     socket.on("screenshare:start", () => {
       if (user.role !== "admin") return;
       if (screenShareSession) return;
@@ -145,7 +114,6 @@ app.prepare().then(async () => {
         hostName: user.name,
         viewers: new Map(),
         pending: new Map(),
-        initSegment: null,
       };
       broadcastScreenShareState(io);
     });
@@ -162,28 +130,15 @@ app.prepare().then(async () => {
       broadcastScreenShareState(io);
     });
 
-    socket.on("screenshare:accept", async (payload: { userId?: string }) => {
+    socket.on("screenshare:accept", (payload: { userId?: string }) => {
       if (!screenShareSession || screenShareSession.hostId !== userId) return;
       const targetId = payload?.userId;
       if (!targetId || !screenShareSession.pending.has(targetId)) return;
-
       const name = screenShareSession.pending.get(targetId)!;
       screenShareSession.pending.delete(targetId);
       screenShareSession.viewers.set(targetId, name);
       broadcastScreenShareState(io);
       io.to(`user:${targetId}`).emit("screenshare:accepted");
-
-      // Add every socket belonging to the accepted user to the viewer room
-      // and send them the latest init segment so MediaSource can decode.
-      const userSockets = await io.in(`user:${targetId}`).fetchSockets();
-      for (const s of userSockets) s.join(VIEWER_ROOM);
-
-      if (screenShareSession.initSegment) {
-        io.to(`user:${targetId}`).emit("screenshare:init", {
-          mimeType: screenShareSession.initSegment.mimeType,
-          data: screenShareSession.initSegment.data,
-        });
-      }
     });
 
     socket.on("screenshare:reject", (payload: { userId?: string }) => {
@@ -197,20 +152,18 @@ app.prepare().then(async () => {
 
     socket.on("screenshare:end", () => {
       if (!screenShareSession || screenShareSession.hostId !== userId) return;
-      void endScreenShareSession(io);
+      endScreenShareSession(io);
     });
 
-    socket.on("screenshare:leave", async () => {
+    socket.on("screenshare:leave", () => {
       if (!screenShareSession) return;
       if (screenShareSession.hostId === userId) {
-        await endScreenShareSession(io);
+        endScreenShareSession(io);
         return;
       }
       const wasViewer = screenShareSession.viewers.delete(userId);
       const wasPending = screenShareSession.pending.delete(userId);
       if (wasViewer) {
-        const userSockets = await io.in(`user:${userId}`).fetchSockets();
-        for (const s of userSockets) s.leave(VIEWER_ROOM);
         io.to(`user:${screenShareSession.hostId}`).emit("screenshare:viewer-left", {
           userId,
         });
@@ -218,27 +171,57 @@ app.prepare().then(async () => {
       if (wasViewer || wasPending) broadcastScreenShareState(io);
     });
 
-    // Host sends the WebM init segment (first MediaRecorder chunk). Stored so
-    // late joiners can decode; also broadcast to current viewers.
+    // ── WebRTC signaling: relay SDP/ICE between host and a specific viewer. ──
+    //
+    // Only the host may send offers; only accepted viewers (or the host) may
+    // exchange answers and ICE candidates. The server never sees media — these
+    // events are tiny JSON blobs that just route through.
+
     socket.on(
-      "screenshare:init",
-      (payload: { mimeType?: string; data?: unknown }) => {
-        if (!screenShareSession || screenShareSession.hostId !== userId) return;
-        const mimeType = typeof payload?.mimeType === "string" ? payload.mimeType : "";
-        const buffer = toBuffer(payload?.data);
-        if (!mimeType || !buffer) return;
-        screenShareSession.initSegment = { mimeType, data: buffer };
-        io.to(VIEWER_ROOM).emit("screenshare:init", { mimeType, data: buffer });
+      "screenshare:offer",
+      (payload: { to?: string; sdp?: RTCSessionDescriptionInit }) => {
+        const to = payload?.to;
+        const sdp = payload?.sdp;
+        if (!to || !sdp) return;
+        if (!screenShareSession) return;
+        if (screenShareSession.hostId !== userId) return;
+        if (!screenShareSession.viewers.has(to)) return;
+        io.to(`user:${to}`).emit("screenshare:offer", { from: userId, sdp });
       }
     );
 
-    // Host streams subsequent MediaRecorder chunks — relay verbatim to viewers.
-    socket.on("screenshare:chunk", (data: unknown) => {
-      if (!screenShareSession || screenShareSession.hostId !== userId) return;
-      const buffer = toBuffer(data);
-      if (!buffer) return;
-      io.to(VIEWER_ROOM).emit("screenshare:chunk", buffer);
-    });
+    socket.on(
+      "screenshare:answer",
+      (payload: { to?: string; sdp?: RTCSessionDescriptionInit }) => {
+        const to = payload?.to;
+        const sdp = payload?.sdp;
+        if (!to || !sdp) return;
+        if (!screenShareSession) return;
+        if (screenShareSession.hostId !== to) return;
+        if (!screenShareSession.viewers.has(userId)) return;
+        io.to(`user:${to}`).emit("screenshare:answer", { from: userId, sdp });
+      }
+    );
+
+    socket.on(
+      "screenshare:ice-candidate",
+      (payload: { to?: string; candidate?: RTCIceCandidateInit }) => {
+        const to = payload?.to;
+        const candidate = payload?.candidate;
+        if (!to || !candidate) return;
+        if (!screenShareSession) return;
+        const isHost = screenShareSession.hostId === userId;
+        const isAcceptedViewer = screenShareSession.viewers.has(userId);
+        if (!isHost && !isAcceptedViewer) return;
+        // Host can talk to any viewer; a viewer can only talk to the host.
+        if (!isHost && to !== screenShareSession.hostId) return;
+        if (isHost && !screenShareSession.viewers.has(to)) return;
+        io.to(`user:${to}`).emit("screenshare:ice-candidate", {
+          from: userId,
+          candidate,
+        });
+      }
+    );
 
     socket.on("general:send", async (payload: { content: string }) => {
       const content = (payload?.content || "").trim();
@@ -280,17 +263,13 @@ app.prepare().then(async () => {
 
     socket.on("disconnect", async () => {
       if (screenShareSession) {
-        if (screenShareSession.hostId === userId) {
-          // The disconnect might just be a refresh — only fully end if no other
-          // host socket is still connected.
-          const remainingHostSockets = await io.in(`user:${userId}`).fetchSockets();
-          if (remainingHostSockets.length === 0) {
-            await endScreenShareSession(io);
-          }
-        } else {
-          // Evict the viewer/pending entry only when their last socket goes away.
-          const remainingUserSockets = await io.in(`user:${userId}`).fetchSockets();
-          if (remainingUserSockets.length === 0) {
+        // Only treat the user as fully gone when their last socket disconnects
+        // (so reload / second tab doesn't kill the session).
+        const remainingUserSockets = await io.in(`user:${userId}`).fetchSockets();
+        if (remainingUserSockets.length === 0) {
+          if (screenShareSession.hostId === userId) {
+            endScreenShareSession(io);
+          } else {
             const wasViewer = screenShareSession.viewers.delete(userId);
             const wasPending = screenShareSession.pending.delete(userId);
             if (wasViewer) {

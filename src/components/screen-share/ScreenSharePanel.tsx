@@ -6,15 +6,16 @@ import { useApp } from "@/components/AppProvider";
 import { useScreenShareTransport } from "@/components/screen-share/useScreenShareTransport";
 import {
   EMPTY_SCREEN_SHARE_STATE,
-  SCREEN_SHARE_FRAME_RATE,
-  SCREEN_SHARE_LIVE_SYNC,
-  SCREEN_SHARE_TIMESLICE_MS,
-  SCREEN_SHARE_VIDEO_BPS,
-  pickScreenShareMime,
+  getIceServers,
   type ScreenShareState,
 } from "@/lib/screen-share-types";
 
 type JoinStatus = "idle" | "pending" | "approved" | "rejected";
+
+type HostPeer = {
+  pc: RTCPeerConnection;
+  pendingIce: RTCIceCandidateInit[];
+};
 
 export function ScreenSharePanel() {
   const { user } = useApp();
@@ -32,17 +33,12 @@ export function ScreenSharePanel() {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunkTimerRef = useRef<number | null>(null);
-  const initSentRef = useRef(false);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
 
-  const mediaSourceRef = useRef<MediaSource | null>(null);
-  const sourceBufferRef = useRef<SourceBuffer | null>(null);
-  const pendingChunksRef = useRef<ArrayBuffer[]>([]);
-  const pendingInitRef = useRef<{ mimeType: string; data: ArrayBuffer } | null>(null);
-  const objectUrlRef = useRef<string | null>(null);
-  const isViewerRef = useRef(false);
-  const liveSyncTimerRef = useRef<number | null>(null);
+  const hostPeersRef = useRef<Map<string, HostPeer>>(new Map());
+  const viewerPeerRef = useRef<RTCPeerConnection | null>(null);
+  const viewerPendingIceRef = useRef<RTCIceCandidateInit[]>([]);
+  const hostIdRef = useRef<string | null>(null);
 
   const actionsRef =
     useRef<ReturnType<typeof useScreenShareTransport>["actions"] | null>(null);
@@ -51,11 +47,11 @@ export function ScreenSharePanel() {
   const isViewer = state.viewers.some((v) => v.id === user.sub);
   const isPending = state.pendingRequests.some((p) => p.id === user.sub);
 
-  isViewerRef.current = isViewer || joinStatus === "approved";
+  useEffect(() => {
+    hostIdRef.current = state.host?.id ?? null;
+  }, [state.host?.id]);
 
-  // Callback refs guarantee the stream/source attaches whether the <video>
-  // mounts before OR after the stream becomes available — this is the fix
-  // for the host preview not showing up.
+  /** Attach the host's own preview the moment either the stream OR the video element exists. */
   const attachLocalVideo = useCallback((node: HTMLVideoElement | null) => {
     localVideoRef.current = node;
     if (node && localStreamRef.current && node.srcObject !== localStreamRef.current) {
@@ -64,199 +60,259 @@ export function ScreenSharePanel() {
     }
   }, []);
 
+  /** Same for the viewer: attach the incoming remote stream whenever both pieces are ready. */
   const attachRemoteVideo = useCallback((node: HTMLVideoElement | null) => {
     remoteVideoRef.current = node;
-    if (node && objectUrlRef.current && node.src !== objectUrlRef.current) {
-      node.src = objectUrlRef.current;
+    if (node && remoteStreamRef.current && node.srcObject !== remoteStreamRef.current) {
+      node.srcObject = remoteStreamRef.current;
       void node.play().catch(() => undefined);
-    } else if (node && pendingInitRef.current && !mediaSourceRef.current) {
-      // Init arrived before the <video> mounted — start playback now.
-      void tryStartViewerRef.current?.();
     }
   }, []);
 
-  const cleanupHost = useCallback(() => {
-    if (chunkTimerRef.current !== null) {
-      window.clearInterval(chunkTimerRef.current);
-      chunkTimerRef.current = null;
+  // ─────────────────────────── Host: per-viewer peer ──────────────────────────
+
+  const closeHostPeer = useCallback((viewerId: string) => {
+    const peer = hostPeersRef.current.get(viewerId);
+    if (!peer) return;
+    try {
+      peer.pc.close();
+    } catch {
+      /* ignore */
     }
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+    hostPeersRef.current.delete(viewerId);
+  }, []);
+
+  const closeAllHostPeers = useCallback(() => {
+    for (const id of [...hostPeersRef.current.keys()]) closeHostPeer(id);
+  }, [closeHostPeer]);
+
+  const createHostPeerForViewer = useCallback(
+    async (viewerId: string) => {
+      const actions = actionsRef.current;
+      const stream = localStreamRef.current;
+      if (!actions || !stream) return;
+      if (hostPeersRef.current.has(viewerId)) return;
+
+      const pc = new RTCPeerConnection(getIceServers());
+      const peer: HostPeer = { pc, pendingIce: [] };
+      hostPeersRef.current.set(viewerId, peer);
+
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) actions.sendIce(viewerId, event.candidate.toJSON());
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (
+          pc.connectionState === "failed" ||
+          pc.connectionState === "closed" ||
+          pc.connectionState === "disconnected"
+        ) {
+          // Don't auto-close on "disconnected" — it often recovers; only on
+          // "failed"/"closed" do we drop the peer.
+          if (pc.connectionState !== "disconnected") closeHostPeer(viewerId);
+        }
+      };
+
       try {
-        recorderRef.current.stop();
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        if (pc.localDescription) {
+          actions.sendOffer(viewerId, pc.localDescription.toJSON());
+        }
+      } catch (err) {
+        console.error("[screenshare] host createOffer failed", err);
+        closeHostPeer(viewerId);
+      }
+    },
+    [closeHostPeer]
+  );
+
+  // ─────────────────────────── Viewer: single peer ────────────────────────────
+
+  const closeViewerPeer = useCallback(() => {
+    if (viewerPeerRef.current) {
+      try {
+        viewerPeerRef.current.close();
       } catch {
         /* ignore */
       }
+      viewerPeerRef.current = null;
     }
-    recorderRef.current = null;
-    initSentRef.current = false;
+    viewerPendingIceRef.current = [];
+    remoteStreamRef.current = null;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    setStreamConnected(false);
+  }, []);
+
+  const ensureViewerPeer = useCallback(() => {
+    if (viewerPeerRef.current) return viewerPeerRef.current;
+
+    const pc = new RTCPeerConnection(getIceServers());
+    viewerPeerRef.current = pc;
+
+    pc.ontrack = (event) => {
+      const [stream] = event.streams;
+      if (!stream) return;
+      remoteStreamRef.current = stream;
+      const v = remoteVideoRef.current;
+      if (v && v.srcObject !== stream) {
+        v.srcObject = stream;
+        void v.play().catch(() => undefined);
+      }
+      setStreamConnected(true);
+    };
+
+    pc.onicecandidate = (event) => {
+      const actions = actionsRef.current;
+      const hostId = hostIdRef.current;
+      if (event.candidate && hostId && actions) {
+        actions.sendIce(hostId, event.candidate.toJSON());
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        closeViewerPeer();
+      }
+    };
+
+    return pc;
+  }, [closeViewerPeer]);
+
+  // ─────────────────────────── Common cleanup ─────────────────────────────────
+
+  const cleanupHostMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
   }, []);
 
-  const cleanupViewer = useCallback(() => {
-    if (liveSyncTimerRef.current !== null) {
-      window.clearInterval(liveSyncTimerRef.current);
-      liveSyncTimerRef.current = null;
-    }
-    pendingChunksRef.current = [];
-    pendingInitRef.current = null;
-    const sb = sourceBufferRef.current;
-    sourceBufferRef.current = null;
-    const ms = mediaSourceRef.current;
-    mediaSourceRef.current = null;
-    if (sb && ms && ms.readyState === "open") {
-      try {
-        ms.removeSourceBuffer(sb);
-      } catch {
-        /* ignore */
-      }
-    }
-    if (ms && ms.readyState === "open") {
-      try {
-        ms.endOfStream();
-      } catch {
-        /* ignore */
-      }
-    }
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = null;
-    }
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.removeAttribute("src");
-      remoteVideoRef.current.load();
-      remoteVideoRef.current.playbackRate = 1.0;
-    }
-    setStreamConnected(false);
-  }, []);
-
-  /**
-   * Live-sync loop: keep the viewer's playhead close to the live edge of the
-   * SourceBuffer. Without this the player drifts behind the host by 2–4 s.
-   */
-  const startLiveSync = useCallback(() => {
-    if (liveSyncTimerRef.current !== null) return;
-    liveSyncTimerRef.current = window.setInterval(() => {
-      const v = remoteVideoRef.current;
-      const sb = sourceBufferRef.current;
-      if (!v || !sb || sb.buffered.length === 0 || v.readyState < 2) return;
-
-      const liveEdge = sb.buffered.end(sb.buffered.length - 1);
-      const gap = liveEdge - v.currentTime;
-
-      if (gap > SCREEN_SHARE_LIVE_SYNC.jumpThreshold) {
-        v.currentTime = Math.max(0, liveEdge - SCREEN_SHARE_LIVE_SYNC.targetOffset);
-        v.playbackRate = 1.0;
-      } else if (gap > SCREEN_SHARE_LIVE_SYNC.catchUpThreshold) {
-        v.playbackRate = 1.1;
-      } else {
-        v.playbackRate = 1.0;
-      }
-    }, SCREEN_SHARE_LIVE_SYNC.checkIntervalMs);
-  }, []);
-
   const resetClient = useCallback(() => {
-    cleanupHost();
-    cleanupViewer();
+    closeAllHostPeers();
+    closeViewerPeer();
+    cleanupHostMedia();
     setSharing(false);
     setJoinStatus("idle");
-  }, [cleanupHost, cleanupViewer]);
+  }, [cleanupHostMedia, closeAllHostPeers, closeViewerPeer]);
 
-  /** Drain queued chunks into the SourceBuffer once it's idle. */
-  const flushPending = useCallback(() => {
-    const sb = sourceBufferRef.current;
-    if (!sb || sb.updating) return;
-    const chunk = pendingChunksRef.current.shift();
-    if (!chunk) return;
-    try {
-      sb.appendBuffer(chunk);
-    } catch (err) {
-      if (
-        err instanceof DOMException &&
-        err.name === "QuotaExceededError" &&
-        sb.buffered.length > 0
-      ) {
-        // Trim oldest 5 s so the buffer can keep accepting live data.
-        const start = sb.buffered.start(0);
-        const end = sb.buffered.end(sb.buffered.length - 1);
-        try {
-          sb.remove(start, Math.max(start, end - 5));
-        } catch {
-          /* ignore */
-        }
-        pendingChunksRef.current.unshift(chunk);
-        return;
-      }
-      console.error("[screenshare] appendBuffer failed", err);
-      pendingChunksRef.current.unshift(chunk);
-    }
-  }, []);
-
-  const tryStartViewerRef = useRef<(() => void) | null>(null);
-
-  const tryStartViewer = useCallback(() => {
-    if (isAdmin || !isViewerRef.current) return;
-
-    const init = pendingInitRef.current;
-    const video = remoteVideoRef.current;
-    if (!init || !video || mediaSourceRef.current) return;
-
-    const ms = new MediaSource();
-    mediaSourceRef.current = ms;
-    const url = URL.createObjectURL(ms);
-    objectUrlRef.current = url;
-    video.src = url;
-    void video.play().catch(() => undefined);
-
-    ms.addEventListener("sourceopen", () => {
-      if (sourceBufferRef.current || mediaSourceRef.current !== ms) return;
-      try {
-        const sb = ms.addSourceBuffer(init.mimeType);
-        sb.mode = "sequence";
-        sb.addEventListener("updateend", () => {
-          flushPending();
-          const v = remoteVideoRef.current;
-          if (v && v.paused) void v.play().catch(() => undefined);
-        });
-        sourceBufferRef.current = sb;
-        pendingChunksRef.current.push(init.data);
-        flushPending();
-        setStreamConnected(true);
-        startLiveSync();
-      } catch (err) {
-        setError(
-          `Your browser can't play this stream (${init.mimeType}). Try Chrome or Edge.`
-        );
-        console.error("[screenshare] addSourceBuffer failed", err);
-      }
-    });
-  }, [flushPending, isAdmin, startLiveSync]);
-
-  tryStartViewerRef.current = tryStartViewer;
+  // ─────────────────────────── Transport handlers ─────────────────────────────
 
   const { ready, actions } = useScreenShareTransport({
     onState: (next) => setState(next),
     onAccepted: () => setJoinStatus("approved"),
     onRejected: () => setJoinStatus("rejected"),
     onEnded: () => resetClient(),
-    onViewerLeft: () => {
-      /* host-only signal; no per-peer state because chunks are broadcast through the server. */
+    onViewerLeft: ({ userId }) => {
+      // Host received notice a specific viewer dropped — close their peer.
+      closeHostPeer(userId);
     },
-    onInit: ({ mimeType, data }) => {
+    onOffer: async ({ from, sdp }) => {
       if (isAdmin) return;
-      pendingInitRef.current = { mimeType, data };
-      tryStartViewer();
+      const pc = ensureViewerPeer();
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        // Drain any ICE that arrived before the offer.
+        for (const c of viewerPendingIceRef.current) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(c));
+          } catch {
+            /* ignore stale */
+          }
+        }
+        viewerPendingIceRef.current = [];
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        if (pc.localDescription && actionsRef.current) {
+          actionsRef.current.sendAnswer(from, pc.localDescription.toJSON());
+        }
+      } catch (err) {
+        console.error("[screenshare] viewer answer failed", err);
+      }
     },
-    onChunk: (data) => {
-      if (isAdmin) return;
-      if (!sourceBufferRef.current && !pendingInitRef.current) return;
-      pendingChunksRef.current.push(data);
-      flushPending();
+    onAnswer: async ({ from, sdp }) => {
+      const peer = hostPeersRef.current.get(from);
+      if (!peer) return;
+      try {
+        await peer.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        for (const c of peer.pendingIce) {
+          try {
+            await peer.pc.addIceCandidate(new RTCIceCandidate(c));
+          } catch {
+            /* ignore stale */
+          }
+        }
+        peer.pendingIce = [];
+      } catch (err) {
+        console.error("[screenshare] host setRemoteDescription failed", err);
+      }
+    },
+    onIce: async ({ from, candidate }) => {
+      if (isAdmin) {
+        const peer = hostPeersRef.current.get(from);
+        if (!peer) return;
+        if (!peer.pc.remoteDescription) {
+          peer.pendingIce.push(candidate);
+          return;
+        }
+        try {
+          await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch {
+          /* ignore stale */
+        }
+      } else {
+        const pc = viewerPeerRef.current;
+        if (!pc || !pc.remoteDescription) {
+          viewerPendingIceRef.current.push(candidate);
+          return;
+        }
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch {
+          /* ignore stale */
+        }
+      }
     },
   });
 
   actionsRef.current = actions;
+
+  // ─────────────────────────── Host: react to viewer list changes ─────────────
+
+  useEffect(() => {
+    if (!isHost || !sharing || !localStreamRef.current) return;
+    // Add a peer for each newly accepted viewer.
+    for (const viewer of state.viewers) {
+      if (!hostPeersRef.current.has(viewer.id)) {
+        void createHostPeerForViewer(viewer.id);
+      }
+    }
+    // Close peers for viewers that left.
+    for (const id of [...hostPeersRef.current.keys()]) {
+      if (!state.viewers.some((v) => v.id === id)) closeHostPeer(id);
+    }
+  }, [closeHostPeer, createHostPeerForViewer, isHost, sharing, state.viewers]);
+
+  // Keep join status synced to server-broadcast state.
+  useEffect(() => {
+    if (isPending) {
+      setJoinStatus("pending");
+    } else if (isViewer && joinStatus !== "approved") {
+      setJoinStatus("approved");
+    } else if (
+      !isViewer &&
+      !isPending &&
+      joinStatus !== "idle" &&
+      joinStatus !== "rejected"
+    ) {
+      setJoinStatus("idle");
+    }
+  }, [isPending, isViewer, joinStatus]);
+
+  // ─────────────────────────── Actions ────────────────────────────────────────
 
   const endShare = useCallback(() => {
     actions.end();
@@ -265,26 +321,18 @@ export function ScreenSharePanel() {
 
   const leaveSession = useCallback(() => {
     actions.leave();
-    cleanupViewer();
+    closeViewerPeer();
     setJoinStatus("idle");
-  }, [actions, cleanupViewer]);
+  }, [actions, closeViewerPeer]);
 
   const startSharing = useCallback(async () => {
     if (!ready || !isAdmin) return;
     setError(null);
 
-    const mimeType = pickScreenShareMime();
-    if (!mimeType) {
-      setError(
-        "Your browser can't record or play WebM. Use Chrome or Edge to host screen sharing."
-      );
-      return;
-    }
-
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: SCREEN_SHARE_FRAME_RATE },
+        video: { frameRate: 30 },
         audio: false,
       });
     } catch {
@@ -293,8 +341,6 @@ export function ScreenSharePanel() {
     }
 
     localStreamRef.current = stream;
-    // Attach immediately if the preview <video> is already mounted; otherwise
-    // attachLocalVideo will pick the stream up when it mounts.
     const v = localVideoRef.current;
     if (v) {
       v.srcObject = stream;
@@ -302,64 +348,11 @@ export function ScreenSharePanel() {
     }
     stream.getVideoTracks()[0]?.addEventListener("ended", () => endShare());
 
-    let recorder: MediaRecorder;
-    try {
-      recorder = new MediaRecorder(stream, {
-        mimeType,
-        videoBitsPerSecond: SCREEN_SHARE_VIDEO_BPS,
-      });
-    } catch (err) {
-      setError("Could not start recording the screen.");
-      stream.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
-      console.error("[screenshare] MediaRecorder failed", err);
-      return;
-    }
-
-    recorderRef.current = recorder;
-    initSentRef.current = false;
-
-    recorder.ondataavailable = async (event) => {
-      if (!event.data || event.data.size === 0) return;
-      const buffer = await event.data.arrayBuffer();
-      if (!initSentRef.current) {
-        actions.sendInit(mimeType, buffer);
-        initSentRef.current = true;
-      } else {
-        actions.sendChunk(buffer);
-      }
-    };
-    recorder.onerror = () => endShare();
-
     actions.start();
     setSharing(true);
-
-    // start() without a timeslice + periodic requestData() produces a reliable
-    // WebM init segment on the first flush, then media clusters after that.
-    recorder.start();
-    recorder.requestData();
-    chunkTimerRef.current = window.setInterval(() => {
-      if (recorder.state === "recording") recorder.requestData();
-    }, SCREEN_SHARE_TIMESLICE_MS);
   }, [actions, endShare, isAdmin, ready]);
 
-  // Keep join state in sync with server-broadcast state.
-  useEffect(() => {
-    if (isPending) {
-      setJoinStatus("pending");
-    } else if (isViewer && joinStatus !== "approved") {
-      setJoinStatus("approved");
-    } else if (!isViewer && !isPending && joinStatus !== "idle" && joinStatus !== "rejected") {
-      setJoinStatus("idle");
-    }
-  }, [isPending, isViewer, joinStatus]);
-
-  // When the viewer <video> mounts after init was already received, start playback.
-  useEffect(() => {
-    if (!isAdmin && (isViewer || joinStatus === "approved")) {
-      tryStartViewer();
-    }
-  }, [isAdmin, isViewer, joinStatus, tryStartViewer]);
+  // ─────────────────────────── Fullscreen ─────────────────────────────────────
 
   useEffect(() => {
     const onFsChange = () =>
@@ -372,34 +365,34 @@ export function ScreenSharePanel() {
     const el = stageRef.current;
     if (!el) return;
     try {
-      if (document.fullscreenElement === el) {
-        await document.exitFullscreen();
-      } else {
-        await el.requestFullscreen();
-      }
+      if (document.fullscreenElement === el) await document.exitFullscreen();
+      else await el.requestFullscreen();
     } catch (err) {
       console.error("[screenshare] fullscreen toggle failed", err);
     }
   }, []);
 
-  // Cleanup on unmount — always reads the latest action snapshot.
+  // ─────────────────────────── Unmount cleanup ────────────────────────────────
+
   useEffect(() => {
     return () => {
       if (sharing && isHost) actionsRef.current?.end();
       else if (isViewer || isPending) actionsRef.current?.leave();
-      cleanupHost();
-      cleanupViewer();
+      closeAllHostPeers();
+      closeViewerPeer();
+      cleanupHostMedia();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─────────────────────────── Render ─────────────────────────────────────────
 
   if (!ready) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 p-8 text-center max-w-lg mx-auto">
         <h1 className="text-xl font-semibold text-slate-900 mb-2">Screen Share</h1>
         <p className="text-slate-500 text-sm">
-          Connecting to the screen-share server… If this persists, the deployment must
-          run the custom Node server (Socket.IO) — not a serverless platform.
+          Connecting to the screen-share server…
         </p>
       </div>
     );
@@ -486,7 +479,6 @@ export function ScreenSharePanel() {
                   autoPlay
                   muted
                   playsInline
-                  preload="auto"
                   className="w-full h-full object-contain"
                 />
               ) : state.active && state.host ? (
