@@ -6,6 +6,8 @@ import { useApp } from "@/components/AppProvider";
 import { useScreenShareTransport } from "@/components/screen-share/useScreenShareTransport";
 import {
   EMPTY_SCREEN_SHARE_STATE,
+  SCREEN_SHARE_FRAME_RATE,
+  SCREEN_SHARE_LIVE_SYNC,
   SCREEN_SHARE_TIMESLICE_MS,
   SCREEN_SHARE_VIDEO_BPS,
   pickScreenShareMime,
@@ -40,6 +42,7 @@ export function ScreenSharePanel() {
   const pendingInitRef = useRef<{ mimeType: string; data: ArrayBuffer } | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const isViewerRef = useRef(false);
+  const liveSyncTimerRef = useRef<number | null>(null);
 
   const actionsRef =
     useRef<ReturnType<typeof useScreenShareTransport>["actions"] | null>(null);
@@ -92,6 +95,10 @@ export function ScreenSharePanel() {
   }, []);
 
   const cleanupViewer = useCallback(() => {
+    if (liveSyncTimerRef.current !== null) {
+      window.clearInterval(liveSyncTimerRef.current);
+      liveSyncTimerRef.current = null;
+    }
     pendingChunksRef.current = [];
     pendingInitRef.current = null;
     const sb = sourceBufferRef.current;
@@ -119,8 +126,34 @@ export function ScreenSharePanel() {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.removeAttribute("src");
       remoteVideoRef.current.load();
+      remoteVideoRef.current.playbackRate = 1.0;
     }
     setStreamConnected(false);
+  }, []);
+
+  /**
+   * Live-sync loop: keep the viewer's playhead close to the live edge of the
+   * SourceBuffer. Without this the player drifts behind the host by 2–4 s.
+   */
+  const startLiveSync = useCallback(() => {
+    if (liveSyncTimerRef.current !== null) return;
+    liveSyncTimerRef.current = window.setInterval(() => {
+      const v = remoteVideoRef.current;
+      const sb = sourceBufferRef.current;
+      if (!v || !sb || sb.buffered.length === 0 || v.readyState < 2) return;
+
+      const liveEdge = sb.buffered.end(sb.buffered.length - 1);
+      const gap = liveEdge - v.currentTime;
+
+      if (gap > SCREEN_SHARE_LIVE_SYNC.jumpThreshold) {
+        v.currentTime = Math.max(0, liveEdge - SCREEN_SHARE_LIVE_SYNC.targetOffset);
+        v.playbackRate = 1.0;
+      } else if (gap > SCREEN_SHARE_LIVE_SYNC.catchUpThreshold) {
+        v.playbackRate = 1.1;
+      } else {
+        v.playbackRate = 1.0;
+      }
+    }, SCREEN_SHARE_LIVE_SYNC.checkIntervalMs);
   }, []);
 
   const resetClient = useCallback(() => {
@@ -190,6 +223,7 @@ export function ScreenSharePanel() {
         pendingChunksRef.current.push(init.data);
         flushPending();
         setStreamConnected(true);
+        startLiveSync();
       } catch (err) {
         setError(
           `Your browser can't play this stream (${init.mimeType}). Try Chrome or Edge.`
@@ -197,7 +231,7 @@ export function ScreenSharePanel() {
         console.error("[screenshare] addSourceBuffer failed", err);
       }
     });
-  }, [flushPending, isAdmin]);
+  }, [flushPending, isAdmin, startLiveSync]);
 
   tryStartViewerRef.current = tryStartViewer;
 
@@ -250,7 +284,7 @@ export function ScreenSharePanel() {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 30 },
+        video: { frameRate: SCREEN_SHARE_FRAME_RATE },
         audio: false,
       });
     } catch {
@@ -452,6 +486,7 @@ export function ScreenSharePanel() {
                   autoPlay
                   muted
                   playsInline
+                  preload="auto"
                   className="w-full h-full object-contain"
                 />
               ) : state.active && state.host ? (

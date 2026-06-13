@@ -61,8 +61,26 @@ export function toArrayBuffer(data: unknown): ArrayBuffer | null {
   return null;
 }
 
-/** How often the host requests the next MediaRecorder chunk. */
-export const SCREEN_SHARE_TIMESLICE_MS = 500;
+/** How often the host requests the next MediaRecorder chunk. Smaller = lower latency. */
+export const SCREEN_SHARE_TIMESLICE_MS = 200;
 
 /** Target host upload bitrate. ~2.5 Mbps is enough for crisp 1080p slides/code. */
 export const SCREEN_SHARE_VIDEO_BPS = 2_500_000;
+
+/** Capture framerate. 15 fps is fine for slides/code and halves bandwidth + cluster size. */
+export const SCREEN_SHARE_FRAME_RATE = 15;
+
+/**
+ * Viewer "live sync" thresholds — gap (seconds) between playhead and the live
+ * edge of the SourceBuffer. The viewer speeds up or seeks to stay near live.
+ */
+export const SCREEN_SHARE_LIVE_SYNC = {
+  /** Above this gap, jump straight to the live edge. */
+  jumpThreshold: 3,
+  /** Above this gap, play 1.1× to catch up smoothly. */
+  catchUpThreshold: 1.2,
+  /** Land this far behind the live edge after a jump (avoid stalls). */
+  targetOffset: 0.4,
+  /** How often to check the gap. */
+  checkIntervalMs: 750,
+} as const;
