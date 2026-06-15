@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { dmKeyFor } from "@/lib/repo";
 import {
   createExtendedMessage,
+  getPeerReadAt,
   listChannelMessages,
   listChannelMessagesSince,
   listDmMessagesExtended,
@@ -13,12 +14,12 @@ import {
   userCanAccessChannel,
 } from "@/lib/chat-repo";
 import { toChatMessage } from "@/lib/chat-message";
-import { parseChatTarget } from "@/lib/chat-target";
+import { dmConversationKey, parseChatTarget } from "@/lib/chat-target";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
 
 const attachmentSchema = z.object({
   fileName: z.string(),
-  fileUrl: z.string().url(),
+  fileUrl: z.string().min(1),
   mimeType: z.string(),
   fileSize: z.number().int().nonnegative(),
 });
@@ -50,11 +51,14 @@ export async function GET(req: Request) {
 
     if (parsed.kind === "dm") {
       const key = dmKeyFor(me.sub, parsed.userId);
+      const convKey = dmConversationKey(me.sub, parsed.userId);
       const rows = since
         ? await listDmMessagesSinceExtended(key, since)
         : await listDmMessagesExtended(key);
+      const peerReadAt = await getPeerReadAt(parsed.userId, convKey);
       return NextResponse.json({
         messages: rows.map((m) => toChatMessage(m, parsed.userId)),
+        peerReadAt,
       });
     }
 

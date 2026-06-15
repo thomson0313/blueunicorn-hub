@@ -38,7 +38,13 @@ export default function ChatPage() {
   return (
     <div className="relative h-[calc(100vh-9rem)]">
       <div className="h-full mr-80 bg-white rounded-xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
-        <ChatConversation target={target} users={users} channels={channels} className="flex-1" />
+        <ChatConversation
+          target={target}
+          users={users}
+          channels={channels}
+          className="flex-1"
+          onConversationChange={() => void refresh()}
+        />
       </div>
       <ChatRightSidebar
         open
@@ -50,6 +56,7 @@ export default function ChatPage() {
         onlineUserIds={onlineUserIds}
         unread={unread}
         activeTarget={target}
+        loading={loading}
         onSelect={setTarget}
         onRefresh={() => void refresh()}
       />

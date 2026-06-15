@@ -2,6 +2,25 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getSupabase } from "./supabase";
 
+async function storeLocal(
+  userId: string,
+  file: File,
+  buffer: Buffer,
+  safeName: string,
+  ext: string
+): Promise<{ url: string; mimeType: string; fileName: string; fileSize: number }> {
+  const uploadsDir = path.join(process.cwd(), "public", "uploads", "chat");
+  await fs.mkdir(uploadsDir, { recursive: true });
+  const filename = `${userId}-${Date.now()}-${safeName || `file.${ext}`}`;
+  await fs.writeFile(path.join(uploadsDir, filename), buffer);
+  return {
+    url: `/uploads/chat/${filename}`,
+    mimeType: file.type || "application/octet-stream",
+    fileName: file.name,
+    fileSize: file.size,
+  };
+}
+
 /** Persist a chat attachment and return its public URL. */
 export async function storeChatAttachment(
   userId: string,
@@ -13,19 +32,24 @@ export async function storeChatAttachment(
   const objectPath = `${userId}/${Date.now()}-${safeName || `file.${ext}`}`;
 
   if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    const supabase = getSupabase();
-    const { error } = await supabase.storage.from("chat-attachments").upload(objectPath, buffer, {
-      contentType: file.type || "application/octet-stream",
-      upsert: false,
-    });
-    if (error) throw new Error(error.message);
-    const { data } = supabase.storage.from("chat-attachments").getPublicUrl(objectPath);
-    return {
-      url: data.publicUrl,
-      mimeType: file.type || "application/octet-stream",
-      fileName: file.name,
-      fileSize: file.size,
-    };
+    try {
+      const supabase = getSupabase();
+      const { error } = await supabase.storage.from("chat-attachments").upload(objectPath, buffer, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      });
+      if (!error) {
+        const { data } = supabase.storage.from("chat-attachments").getPublicUrl(objectPath);
+        return {
+          url: data.publicUrl,
+          mimeType: file.type || "application/octet-stream",
+          fileName: file.name,
+          fileSize: file.size,
+        };
+      }
+    } catch {
+      /* fall through to local storage */
+    }
   }
 
   if (process.env.BLOB_READ_WRITE_TOKEN) {
@@ -42,14 +66,5 @@ export async function storeChatAttachment(
     };
   }
 
-  const uploadsDir = path.join(process.cwd(), "public", "uploads", "chat");
-  await fs.mkdir(uploadsDir, { recursive: true });
-  const filename = `${userId}-${Date.now()}-${safeName}`;
-  await fs.writeFile(path.join(uploadsDir, filename), buffer);
-  return {
-    url: `/uploads/chat/${filename}`,
-    mimeType: file.type || "application/octet-stream",
-    fileName: file.name,
-    fileSize: file.size,
-  };
+  return storeLocal(userId, file, buffer, safeName, ext);
 }

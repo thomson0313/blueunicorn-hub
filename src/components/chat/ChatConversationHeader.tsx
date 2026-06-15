@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
+import { anchoredPosition } from "@/lib/anchored-position";
 import { parseChatTarget } from "@/lib/chat-target";
 import type { PublicUser } from "@/lib/types";
 
@@ -13,8 +14,8 @@ export function ChatConversationHeader({
   onlineUserIds,
   connected,
   typingName,
-  onSearchInChat,
-  onDeleteChat,
+  searchOpen,
+  onToggleSearch,
 }: {
   target: string;
   users: PublicUser[];
@@ -22,22 +23,10 @@ export function ChatConversationHeader({
   onlineUserIds: string[];
   connected: boolean;
   typingName?: string | null;
-  onSearchInChat?: () => void;
-  onDeleteChat?: () => void;
+  searchOpen?: boolean;
+  onToggleSearch?: () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const parsed = parseChatTarget(target);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onDoc(e: MouseEvent) {
-      if (menuRef.current?.contains(e.target as Node)) return;
-      setMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [menuOpen]);
 
   let title = "Chat";
   let subtitle: string | null = null;
@@ -77,18 +66,35 @@ export function ChatConversationHeader({
             {subtitle}
           </div>
         </div>
+        {onToggleSearch && (
+          <button
+            type="button"
+            onClick={onToggleSearch}
+            className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer ${
+              searchOpen ? "bg-brand-50 text-brand-600" : "text-slate-500 hover:bg-slate-100"
+            }`}
+            aria-label="Search in chat"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </button>
+        )}
+        {profileHref && (
+          <Link
+            href={profileHref}
+            className="text-xs text-brand-600 hover:text-brand-700 font-medium shrink-0"
+          >
+            Profile
+          </Link>
+        )}
       </div>
       {!connected && (
         <div className="px-4 py-1.5 bg-amber-50 text-amber-800 text-xs border-t border-amber-100">
           Connection lost — reconnecting…
         </div>
       )}
-      {/* Hidden utility row for search/delete via menu only — header actions live in popup chrome */}
-      <div className="hidden">
-        {profileHref && <Link href={profileHref}>Profile</Link>}
-        <button type="button" onClick={onSearchInChat}>Search</button>
-        <button type="button" onClick={onDeleteChat}>Delete</button>
-      </div>
     </div>
   );
 }
@@ -102,10 +108,10 @@ export function ChatPopupHeader({
   connected,
   typingName,
   minimized,
+  searchOpen,
   onToggleMinimize,
   onClose,
-  onSearchInChat,
-  onDeleteChat,
+  onToggleSearch,
 }: {
   target: string;
   users: PublicUser[];
@@ -114,14 +120,17 @@ export function ChatPopupHeader({
   connected: boolean;
   typingName?: string | null;
   minimized: boolean;
+  searchOpen?: boolean;
   onToggleMinimize: () => void;
   onClose: () => void;
-  onSearchInChat?: () => void;
-  onDeleteChat?: () => void;
+  onToggleSearch?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuPanelRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
   const parsed = parseChatTarget(target);
+  const isChannel = parsed.kind === "channel" || parsed.kind === "general";
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -131,6 +140,19 @@ export function ChatPopupHeader({
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
+
+  useLayoutEffect(() => {
+    if (!menuOpen || !menuPanelRef.current || !menuRef.current) {
+      setMenuPos(null);
+      return;
+    }
+    const btn = menuRef.current.querySelector("button");
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const w = menuPanelRef.current.offsetWidth || 160;
+    const h = menuPanelRef.current.offsetHeight || 120;
+    setMenuPos(anchoredPosition(rect.right - w, rect.bottom + 4, w, h));
   }, [menuOpen]);
 
   let title = "Chat";
@@ -176,52 +198,51 @@ export function ChatPopupHeader({
             {subtitle}
           </div>
         </div>
-        <div className="flex items-center gap-0.5 shrink-0" ref={menuRef}>
-          <div className="relative">
+        <div className="flex items-center gap-0.5 shrink-0">
+          {onToggleSearch && (
             <button
               type="button"
-              onClick={() => setMenuOpen((o) => !o)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-200 cursor-pointer"
-              aria-label="More options"
+              onClick={onToggleSearch}
+              className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer ${
+                searchOpen ? "bg-brand-100 text-brand-600" : "text-slate-600 hover:bg-slate-200"
+              }`}
+              aria-label="Search in chat"
             >
-              ⋮
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
             </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50 text-sm">
-                {profileHref && (
-                  <Link
-                    href={profileHref}
-                    className="block px-3 py-2 hover:bg-slate-50 text-slate-700"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    View profile
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSearchInChat?.();
-                    setMenuOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer"
+          )}
+          {!isChannel && (
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((o) => !o)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-200 cursor-pointer"
+                aria-label="More options"
+              >
+                ⋮
+              </button>
+              {menuOpen && (
+                <div
+                  ref={menuPanelRef}
+                  className="fixed w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-[60] text-sm"
+                  style={menuPos ? { left: menuPos.left, top: menuPos.top } : { visibility: "hidden" }}
                 >
-                  Search chat
-                </button>
-                {parsed.kind === "dm" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onDeleteChat?.();
-                      setMenuOpen(false);
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-50 text-red-600 cursor-pointer"
-                  >
-                    Delete chat
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+                  {profileHref && (
+                    <Link
+                      href={profileHref}
+                      className="block px-3 py-2 hover:bg-slate-50 text-slate-700"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      View profile
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={onToggleMinimize}

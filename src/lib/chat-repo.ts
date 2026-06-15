@@ -328,6 +328,7 @@ export async function listChannelMessages(
     .select("*")
     .eq("channel_type", "channel")
     .eq("channel_id", channelId)
+    .is("deleted_at", null)
     .order("created_at", { ascending: true })
     .limit(limit);
   dbError(error);
@@ -345,6 +346,7 @@ export async function listChannelMessagesSince(
     .select("*")
     .eq("channel_type", "channel")
     .eq("channel_id", channelId)
+    .is("deleted_at", null)
     .gt("created_at", since)
     .order("created_at", { ascending: true })
     .limit(limit);
@@ -358,6 +360,7 @@ export async function listGeneralMessagesExtended(limit = 200): Promise<Extended
     .from("messages")
     .select("*")
     .eq("channel_type", "general")
+    .is("deleted_at", null)
     .order("created_at", { ascending: true })
     .limit(limit);
   dbError(error);
@@ -373,6 +376,7 @@ export async function listGeneralMessagesSinceExtended(
     .from("messages")
     .select("*")
     .eq("channel_type", "general")
+    .is("deleted_at", null)
     .gt("created_at", since)
     .order("created_at", { ascending: true })
     .limit(limit);
@@ -390,6 +394,7 @@ export async function listDmMessagesExtended(
     .select("*")
     .eq("channel_type", "dm")
     .eq("dm_key", dmKey)
+    .is("deleted_at", null)
     .order("created_at", { ascending: true })
     .limit(limit);
   dbError(error);
@@ -407,6 +412,7 @@ export async function listDmMessagesSinceExtended(
     .select("*")
     .eq("channel_type", "dm")
     .eq("dm_key", dmKey)
+    .is("deleted_at", null)
     .gt("created_at", since)
     .order("created_at", { ascending: true })
     .limit(limit);
@@ -495,16 +501,21 @@ export async function editMessage(
 }
 
 export async function deleteMessage(messageId: string, userId: string): Promise<boolean> {
-  const ts = nowISO();
-  const { data, error } = await getSupabase()
+  const sb = getSupabase();
+  const { data, error: findErr } = await sb
     .from("messages")
-    .update({ deleted_at: ts, updated_at: ts, content: "" })
+    .select("id")
     .eq("id", messageId)
     .eq("sender", userId)
-    .select("id")
     .maybeSingle();
+  dbError(findErr);
+  if (!data) return false;
+
+  await sb.from("message_reactions").delete().eq("message_id", messageId);
+  await sb.from("message_attachments").delete().eq("message_id", messageId);
+  const { error } = await sb.from("messages").delete().eq("id", messageId);
   dbError(error);
-  return !!data;
+  return true;
 }
 
 export async function toggleMessageReaction(
@@ -599,6 +610,7 @@ export async function listConversationPreviews(userId: string): Promise<Conversa
     .from("messages")
     .select("content, created_at, sender")
     .eq("channel_type", "general")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -619,6 +631,7 @@ export async function listConversationPreviews(userId: string): Promise<Conversa
     .from("messages")
     .select("content, created_at, sender, recipient, dm_key")
     .eq("channel_type", "dm")
+    .is("deleted_at", null)
     .or(`sender.eq.${userId},recipient.eq.${userId}`)
     .order("created_at", { ascending: false })
     .limit(500);
@@ -652,6 +665,7 @@ export async function listConversationPreviews(userId: string): Promise<Conversa
       .select("content, created_at, sender")
       .eq("channel_type", "channel")
       .eq("channel_id", ch._id)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

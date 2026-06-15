@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp, useRealtimeMode } from "@/components/AppProvider";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ChatComposer, type OutgoingAttachment } from "@/components/chat/ChatComposer";
 import { ChatConversationHeader } from "@/components/chat/ChatConversationHeader";
 import { ChatMessageBubble } from "@/components/chat/ChatMessageBubble";
@@ -16,7 +17,9 @@ export function ChatConversation({
   showHeader = true,
   className = "",
   onTypingChange,
-  openSearch,
+  searchOpen: searchOpenProp,
+  onSearchOpenChange,
+  onConversationChange,
 }: {
   target: string;
   users: PublicUser[];
@@ -24,24 +27,29 @@ export function ChatConversation({
   showHeader?: boolean;
   className?: string;
   onTypingChange?: (name: string | null) => void;
-  openSearch?: boolean;
+  searchOpen?: boolean;
+  onSearchOpenChange?: (open: boolean) => void;
+  onConversationChange?: () => void;
 }) {
-  const { user, socket, setActiveConversation, clearUnread } = useApp();
+  const { user, socket, socketConnected, avatarUrl, onlineUserIds, setActiveConversation, clearUnread } = useApp();
   const realtimeMode = useRealtimeMode();
-  const connected = realtimeMode === "polling" || !!socket?.connected;
+  const connected = realtimeMode === "polling" || socketConnected;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOpenLocal, setSearchOpenLocal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [typingName, setTypingName] = useState<string | null>(null);
   const [peerReadAt, setPeerReadAt] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const searchOpen = searchOpenProp ?? searchOpenLocal;
+  const setSearchOpen = onSearchOpenChange ?? setSearchOpenLocal;
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const lastMessageAtRef = useRef<string | null>(null);
@@ -55,34 +63,38 @@ export function ChatConversation({
         ? `channel:${parsed.channelId}`
         : dmConversationKey(user.sub, parsed.userId);
 
+  const markRead = useCallback(
+    (lastReadAt: string) => {
+      void fetch("/api/chat/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationKey: convKey, lastReadAt }),
+      });
+      if (socket?.connected) {
+        socket.emit("chat:read", { conversationKey: convKey, lastReadAt });
+      }
+    },
+    [convKey, socket]
+  );
+
   const loadHistory = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`/api/messages?target=${encodeURIComponent(target)}`);
     const data = await res.json();
     const list = (data.messages || []) as ChatMessage[];
     setMessages(list);
+    if (data.peerReadAt) setPeerReadAt(data.peerReadAt);
     lastMessageAtRef.current = list.length > 0 ? list[list.length - 1].createdAt : null;
     setLoading(false);
-    if (list.length) {
-      void fetch("/api/chat/read", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationKey: convKey, lastReadAt: list[list.length - 1].createdAt }),
-      });
-    }
-  }, [target, convKey]);
-
-  useEffect(() => {
-    if (openSearch) setSearchOpen(true);
-  }, [openSearch]);
+    if (list.length) markRead(list[list.length - 1].createdAt);
+  }, [target, markRead]);
 
   useEffect(() => {
     void loadHistory();
     setReplyTo(null);
     setEditId(null);
-    setSelectMode(false);
-    setSelectedIds(new Set());
-    setSearchOpen(false);
+    setEditDraft("");
+    setSearchQuery("");
     setTypingName(null);
   }, [loadHistory]);
 
@@ -105,6 +117,11 @@ export function ChatConversation({
     lastMessageAtRef.current = msg.createdAt;
   }, []);
 
+  const removeMessage = useCallback((messageId: string) => {
+    setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    onConversationChange?.();
+  }, [onConversationChange]);
+
   useEffect(() => {
     if (realtimeMode !== "socket" || !socket) return;
 
@@ -115,24 +132,69 @@ export function ChatConversation({
       return other === parsed.userId;
     };
 
-    const onAny = (msg: ChatMessage) => {
-      if (!match(msg)) return;
-      upsertMessage(msg);
-      if (msg.sender._id !== user.sub) {
-        void fetch("/api/chat/read", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversationKey: convKey, lastReadAt: msg.createdAt }),
-        });
-      }
+    const matchMessageDelete = (payload: {
+      messageId: string;
+      channelType: string;
+      channelId?: string;
+      recipient?: string;
+      senderId: string;
+    }) => {
+      if (parsed.kind === "general") return payload.channelType === "general";
+      if (parsed.kind === "channel") return payload.channelId === parsed.channelId;
+      const peer = payload.senderId === user.sub ? payload.recipient : payload.senderId;
+      return peer === parsed.userId;
+    };
+
+    const onDeleted = (payload: {
+      messageId: string;
+      channelType: string;
+      channelId?: string;
+      recipient?: string;
+      senderId: string;
+    }) => {
+      if (!matchMessageDelete(payload)) return;
+      removeMessage(payload.messageId);
     };
 
     const onUpdated = (msg: ChatMessage) => {
-      if (match(msg)) upsertMessage(msg);
+      if (match(msg)) {
+        upsertMessage(msg);
+        onConversationChange?.();
+      }
+    };
+
+    const onAny = (msg: ChatMessage) => {
+      if (!match(msg)) return;
+      setMessages((prev) => {
+        const pendingIdx = prev.findIndex(
+          (m) => m.pending && m.sender._id === user.sub && m.content === msg.content
+        );
+        if (pendingIdx >= 0) {
+          const next = [...prev];
+          next[pendingIdx] = { ...msg, pending: false };
+          return next;
+        }
+        const idx = prev.findIndex((m) => m._id === msg._id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...msg, pending: false };
+          return next;
+        }
+        return [...prev, msg];
+      });
+      lastMessageAtRef.current = msg.createdAt;
+      if (msg.sender._id !== user.sub) {
+        markRead(msg.createdAt);
+      }
     };
 
     const onTyping = (payload: { target: string; userName: string; typing: boolean; userId: string }) => {
-      if (payload.target !== target || payload.userId === user.sub) return;
+      if (payload.userId === user.sub) return;
+      if (parsed.kind === "dm") {
+        if (payload.userId !== parsed.userId) return;
+      } else if (payload.target !== target) {
+        return;
+      }
       const name = payload.typing ? payload.userName : null;
       setTypingName(name);
       onTypingChange?.(name);
@@ -149,6 +211,7 @@ export function ChatConversation({
     socket.on("dm:message", onAny);
     socket.on("channel:message", onAny);
     socket.on("chat:message-updated", onUpdated);
+    socket.on("chat:message-deleted", onDeleted);
     socket.on("chat:typing", onTyping);
     socket.on("chat:read", onRead);
 
@@ -157,10 +220,23 @@ export function ChatConversation({
       socket.off("dm:message", onAny);
       socket.off("channel:message", onAny);
       socket.off("chat:message-updated", onUpdated);
+      socket.off("chat:message-deleted", onDeleted);
       socket.off("chat:typing", onTyping);
       socket.off("chat:read", onRead);
     };
-  }, [socket, target, user.sub, realtimeMode, parsed, convKey, upsertMessage, onTypingChange]);
+  }, [
+    socket,
+    target,
+    user.sub,
+    realtimeMode,
+    parsed,
+    convKey,
+    upsertMessage,
+    removeMessage,
+    onTypingChange,
+    markRead,
+    onConversationChange,
+  ]);
 
   useEffect(() => {
     if (realtimeMode !== "polling") return;
@@ -188,12 +264,12 @@ export function ChatConversation({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, editId]);
 
   const typingEmitRef = useRef<number | null>(null);
 
   function notifyTyping() {
-    if (!socket) return;
+    if (!socket?.connected) return;
     socket.emit("chat:typing", { target, typing: true });
     if (typingEmitRef.current) window.clearTimeout(typingEmitRef.current);
     typingEmitRef.current = window.setTimeout(() => {
@@ -202,33 +278,33 @@ export function ChatConversation({
   }
 
   async function sendMessage(payload: { content: string; attachments: OutgoingAttachment[] }) {
+    if (realtimeMode === "socket" && !socketConnected) return;
     const parentId = replyTo?._id;
     const tempId = `temp-${Date.now()}`;
-    if (realtimeMode !== "socket" || !socket) {
-      const optimistic: ChatMessage = {
-        _id: tempId,
-        sender: { _id: user.sub, name: user.name, role: user.role },
-        recipient: parsed.kind === "dm" ? parsed.userId : undefined,
-        channelId: parsed.kind === "channel" ? parsed.channelId : undefined,
-        parentId,
-        content: payload.content,
-        createdAt: new Date().toISOString(),
-        attachments: payload.attachments.map((a, i) => ({
-          _id: `temp-att-${i}`,
-          ...a,
-        })),
-        pending: true,
-        replyTo: replyTo
-          ? {
-              _id: replyTo._id,
-              content: replyTo.content,
-              senderName: replyTo.sender.name,
-              deleted: !!replyTo.deletedAt,
-            }
-          : null,
-      };
-      setMessages((prev) => [...prev, optimistic]);
-    }
+    const optimistic: ChatMessage = {
+      _id: tempId,
+      sender: { _id: user.sub, name: user.name, role: user.role },
+      recipient: parsed.kind === "dm" ? parsed.userId : undefined,
+      channelId: parsed.kind === "channel" ? parsed.channelId : undefined,
+      parentId,
+      content: payload.content,
+      createdAt: new Date().toISOString(),
+      attachments: payload.attachments.map((a, i) => ({
+        _id: `temp-att-${i}`,
+        ...a,
+      })),
+      pending: true,
+      replyTo: replyTo
+        ? {
+            _id: replyTo._id,
+            content: replyTo.content,
+            senderName: replyTo.sender.name,
+            deleted: false,
+          }
+        : null,
+    };
+
+    setMessages((prev) => [...prev, optimistic]);
     setReplyTo(null);
     notifyTyping();
 
@@ -270,6 +346,7 @@ export function ChatConversation({
     }
     setMessages((prev) => prev.map((m) => (m._id === tempId ? data.message : m)));
     lastMessageAtRef.current = data.message.createdAt;
+    onConversationChange?.();
   }
 
   async function reactToMessage(messageId: string, emoji: string) {
@@ -282,10 +359,17 @@ export function ChatConversation({
     if (res.ok && data.message) upsertMessage(data.message);
   }
 
-  async function deleteMessage(id: string) {
-    const res = await fetch(`/api/messages/${id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (res.ok && data.message) upsertMessage(data.message);
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/messages/${deleteTarget._id}`, { method: "DELETE" });
+      if (res.ok) removeMessage(deleteTarget._id);
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+      setMenu(null);
+    }
   }
 
   async function saveEdit() {
@@ -296,9 +380,17 @@ export function ChatConversation({
       body: JSON.stringify({ content: editDraft.trim() }),
     });
     const data = await res.json();
-    if (res.ok && data.message) upsertMessage(data.message);
+    if (res.ok && data.message) {
+      upsertMessage(data.message);
+      onConversationChange?.();
+    }
     setEditId(null);
     setEditDraft("");
+  }
+
+  function senderAvatar(senderId: string) {
+    if (senderId === user.sub) return avatarUrl;
+    return users.find((u) => u._id === senderId)?.avatarUrl;
   }
 
   const filtered = searchOpen && searchQuery.trim()
@@ -318,95 +410,59 @@ export function ChatConversation({
           target={target}
           users={users}
           channels={channels}
-          onlineUserIds={[]}
+          onlineUserIds={onlineUserIds}
           connected={connected}
           typingName={typingName}
-          onSearchInChat={() => setSearchOpen((o) => !o)}
-          onDeleteChat={() => setMessages([])}
+          searchOpen={searchOpen}
+          onToggleSearch={() => setSearchOpen(!searchOpen)}
         />
       )}
 
       {searchOpen && (
-        <div className="px-3 py-2 border-b border-slate-100">
+        <div className="px-3 py-2 border-b border-slate-100 shrink-0">
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search in this chat…"
+            autoFocus
             className="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
       )}
 
-      {selectMode && selectedIds.size > 0 && (
-        <div className="px-3 py-2 bg-brand-50 text-sm text-brand-800 border-b border-brand-100 flex justify-between">
-          <span>{selectedIds.size} selected</span>
-          <button
-            type="button"
-            onClick={() => {
-              const text = messages
-                .filter((m) => selectedIds.has(m._id))
-                .map((m) => m.content)
-                .join("\n");
-              void navigator.clipboard.writeText(text);
-              setSelectMode(false);
-              setSelectedIds(new Set());
-            }}
-            className="text-brand-700 font-medium cursor-pointer"
-          >
-            Copy selected
-          </button>
-        </div>
-      )}
-
-      {editId && (
-        <div className="px-3 py-2 border-b border-slate-100 flex gap-2">
-          <input
-            value={editDraft}
-            onChange={(e) => setEditDraft(e.target.value)}
-            className="flex-1 text-sm rounded-lg border border-slate-300 px-3 py-1.5"
-          />
-          <button type="button" onClick={() => void saveEdit()} className="text-sm text-brand-600 cursor-pointer">
-            Save
-          </button>
-          <button type="button" onClick={() => setEditId(null)} className="text-sm text-slate-500 cursor-pointer">
-            Cancel
-          </button>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-2 tg-chat-bg min-h-[200px]">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 tg-chat-bg min-h-[200px]">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-8 h-8 rounded-full border-2 border-brand-100 border-t-brand-500 animate-spin" />
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-slate-400 text-sm text-center py-8">No messages yet. Say hello.</p>
+          <p className="text-slate-400 text-sm text-center py-8">
+            {searchOpen && searchQuery.trim() ? "No matching messages." : "No messages yet. Say hello."}
+          </p>
         ) : (
           filtered.map((m) => {
             const mine = m.sender._id === user.sub;
             return (
-              <div key={m._id} className="group">
-                <ChatMessageBubble
-                  message={m}
-                  mine={mine}
-                  showSender={parsed.kind !== "dm"}
-                  selected={selectedIds.has(m._id)}
-                  selectMode={selectMode}
-                  peerReadAt={peerReadAt}
-                  connected={connected}
-                  onContextMenu={(e, msg) => setMenu({ x: e.clientX, y: e.clientY, message: msg })}
-                  onToggleSelect={() =>
-                    setSelectedIds((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(m._id)) next.delete(m._id);
-                      else next.add(m._id);
-                      return next;
-                    })
-                  }
-                  onReaction={(emoji) => void reactToMessage(m._id, emoji)}
-                  currentUserId={user.sub}
-                />
-              </div>
+              <ChatMessageBubble
+                key={m._id}
+                message={m}
+                mine={mine}
+                showSender={parsed.kind !== "dm"}
+                peerReadAt={peerReadAt}
+                connected={connected}
+                avatarUrl={senderAvatar(m.sender._id)}
+                editing={editId === m._id}
+                editDraft={editId === m._id ? editDraft : undefined}
+                onEditDraftChange={setEditDraft}
+                onSaveEdit={() => void saveEdit()}
+                onCancelEdit={() => {
+                  setEditId(null);
+                  setEditDraft("");
+                }}
+                onContextMenu={(e, msg) => setMenu({ x: e.clientX, y: e.clientY, message: msg })}
+                onReaction={(emoji) => void reactToMessage(m._id, emoji)}
+                currentUserId={user.sub}
+              />
             );
           })
         )}
@@ -415,7 +471,7 @@ export function ChatConversation({
 
       <ChatComposer
         placeholder={`Message ${label}`}
-        disabled={!connected || !!editId}
+        canSend={connected}
         replyTo={
           replyTo
             ? { senderName: replyTo.sender.name, content: replyTo.content || "Attachment" }
@@ -438,15 +494,21 @@ export function ChatConversation({
             setEditId(menu.message._id);
             setEditDraft(menu.message.content);
           }}
-          onDelete={() => void deleteMessage(menu.message._id)}
+          onDelete={() => setDeleteTarget(menu.message)}
           onCopy={() => void navigator.clipboard.writeText(menu.message.content)}
-          onSelect={() => {
-            setSelectMode(true);
-            setSelectedIds(new Set([menu.message._id]));
-          }}
           onReact={(emoji) => void reactToMessage(menu.message._id, emoji)}
         />
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete message?"
+        message="This message will be permanently removed for everyone in this chat."
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </section>
   );
 }

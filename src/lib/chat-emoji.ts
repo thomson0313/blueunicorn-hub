@@ -3,6 +3,7 @@ export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"
 export type EmojiCategory = {
   id: string;
   label: string;
+  icon: string;
   emojis: string[];
 };
 
@@ -10,6 +11,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     id: "smileys",
     label: "Smileys",
+    icon: "😀",
     emojis: [
       "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "😊", "😇", "🥰", "😍", "🤩",
       "😘", "😗", "😚", "😙", "🥲", "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🤫",
@@ -22,6 +24,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     id: "gestures",
     label: "Gestures",
+    icon: "👍",
     emojis: [
       "👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "👇", "☝️", "👋",
       "🤚", "🖐️", "✋", "🖖", "👏", "🙌", "🤝", "🙏", "💪", "🦾", "🦿", "🦵", "🦶", "👂",
@@ -30,6 +33,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     id: "objects",
     label: "Objects",
+    icon: "💼",
     emojis: [
       "💼", "📁", "📂", "🗂️", "📅", "📆", "🗒️", "📝", "✏️", "📌", "📎", "🔗", "📧", "💻",
       "🖥️", "⌨️", "🖱️", "💾", "💿", "📱", "☎️", "📞", "🔋", "🔌", "💡", "🔦", "🕯️", "🧯",
@@ -38,6 +42,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     id: "symbols",
     label: "Symbols",
+    icon: "❤️",
     emojis: [
       "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓",
       "💗", "💖", "💘", "💝", "⭐", "🌟", "✨", "⚡", "🔥", "💥", "✅", "❌", "❓", "❗",

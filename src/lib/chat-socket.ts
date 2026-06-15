@@ -96,9 +96,16 @@ export async function handleChannelSend(
 
 export async function broadcastMessageUpdate(io: SocketIOServer, messageId: string) {
   const msg = await getMessageById(messageId);
-  if (!msg) return;
+  if (!msg || msg.deletedAt) return;
   const payload = extendedToChatMessage(msg, msg.recipient || undefined);
   io.emit("chat:message-updated", payload);
+}
+
+export function broadcastMessageDeleted(
+  io: SocketIOServer,
+  payload: { messageId: string; channelType: string; channelId?: string; recipient?: string; senderId: string }
+) {
+  io.emit("chat:message-deleted", payload);
 }
 
 function normalizeAttachments(raw: unknown[] | undefined) {

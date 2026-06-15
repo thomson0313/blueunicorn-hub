@@ -11,10 +11,6 @@ export function ChatMessageContent({
   message: ChatMessage;
   mine: boolean;
 }) {
-  if (message.deletedAt) {
-    return <p className="text-sm italic opacity-70">Message deleted</p>;
-  }
-
   return (
     <div className="space-y-2">
       {message.replyTo && (

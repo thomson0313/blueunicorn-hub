@@ -264,6 +264,7 @@ app.prepare().then(async () => {
           return;
         }
         io.to(`user:${target}`).emit("chat:typing", event);
+        io.to(`user:${userId}`).emit("chat:typing", event);
       }
     );
 

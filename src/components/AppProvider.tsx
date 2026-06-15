@@ -18,6 +18,7 @@ type AppContextValue = {
   setTotpEnabled: (enabled: boolean) => void;
   realtimeMode: RealtimeMode;
   socket: Socket | null;
+  socketConnected: boolean;
   onlineUserIds: string[];
   alerts: AlertItem[];
   dismissAlert: (id: string) => void;
@@ -75,6 +76,7 @@ export function AppProvider({
   }, [initialTotpEnabled]);
   const socketRef = useRef<Socket | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [socketConnected, setSocketConnected] = useState(false);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -171,9 +173,9 @@ export function AppProvider({
     socketRef.current = s;
     setSocket(s);
 
-    s.on("connect_error", () => {
-      s.disconnect();
-    });
+    s.on("connect", () => setSocketConnected(true));
+    s.on("disconnect", () => setSocketConnected(false));
+    if (s.connected) setSocketConnected(true);
 
     s.on("presence:update", (ids: string[]) => setOnlineUserIds(ids));
     // Instant toast when admin schedules an alert for "now" (feed poll handles future times).
@@ -193,6 +195,7 @@ export function AppProvider({
       s.disconnect();
       socketRef.current = null;
       setSocket(null);
+      setSocketConnected(false);
     };
   }, [emailVerified, user.sub, bumpUnread, pushAlert]);
 
@@ -331,6 +334,7 @@ export function AppProvider({
       setTotpEnabled,
       realtimeMode: REALTIME_MODE,
       socket,
+      socketConnected,
       onlineUserIds,
       alerts,
       dismissAlert,
@@ -349,6 +353,7 @@ export function AppProvider({
       userEmail,
       totpEnabled,
       socket,
+      socketConnected,
       onlineUserIds,
       alerts,
       avatarUrl,

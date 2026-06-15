@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Server as SocketIOServer } from "socket.io";
 import { z } from "zod";
 import { connectDB } from "@/lib/db";
 import { setReadCursor } from "@/lib/chat-repo";
@@ -21,7 +22,16 @@ export async function POST(req: Request) {
       );
     }
     await connectDB();
-    await setReadCursor(me.sub, parsed.data.conversationKey, parsed.data.lastReadAt);
+    const lastReadAt = parsed.data.lastReadAt;
+    await setReadCursor(me.sub, parsed.data.conversationKey, lastReadAt);
+    const io = (globalThis as unknown as { _io?: SocketIOServer })._io;
+    if (io) {
+      io.emit("chat:read", {
+        conversationKey: parsed.data.conversationKey,
+        userId: me.sub,
+        lastReadAt: lastReadAt || new Date().toISOString(),
+      });
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     return handleError(err);

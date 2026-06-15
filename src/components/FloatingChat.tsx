@@ -13,14 +13,14 @@ const SIDEBAR_WIDTH = "20rem"; // w-80
 
 export function FloatingChat() {
   const pathname = usePathname();
-  const { totalUnread, onlineUserIds, unread, socket } = useApp();
-  const connected = !!socket?.connected;
+  const { totalUnread, onlineUserIds, unread, socketConnected } = useApp();
+  const connected = socketConnected;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [popupTarget, setPopupTarget] = useState<string | null>(null);
   const [popupMinimized, setPopupMinimized] = useState(false);
   const [popupTyping, setPopupTyping] = useState<string | null>(null);
-  const [searchToggle, setSearchToggle] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [channels, setChannels] = useState<ChatChannel[]>([]);
@@ -51,6 +51,7 @@ export function FloatingChat() {
   function openConversation(target: string) {
     setPopupTarget(target);
     setPopupMinimized(false);
+    setSearchOpen(false);
   }
 
   const hideFab = pathname === "/chat";
@@ -68,6 +69,7 @@ export function FloatingChat() {
         onlineUserIds={onlineUserIds}
         unread={unread}
         activeTarget={popupTarget}
+        loading={loading}
         onSelect={openConversation}
         onRefresh={() => void refreshLists()}
       />
@@ -92,13 +94,14 @@ export function FloatingChat() {
             connected={connected}
             typingName={popupTyping}
             minimized={popupMinimized}
+            searchOpen={searchOpen}
             onToggleMinimize={() => setPopupMinimized((m) => !m)}
             onClose={() => {
               setPopupTarget(null);
               setPopupMinimized(false);
+              setSearchOpen(false);
             }}
-            onSearchInChat={() => setSearchToggle((n) => n + 1)}
-            onDeleteChat={() => setPopupTarget(null)}
+            onToggleSearch={() => setSearchOpen((o) => !o)}
           />
           {!popupMinimized && (
             loading && users.length === 0 ? (
@@ -111,7 +114,9 @@ export function FloatingChat() {
                 showHeader={false}
                 className="flex-1 min-h-0"
                 onTypingChange={setPopupTyping}
-                openSearch={searchToggle > 0}
+                searchOpen={searchOpen}
+                onSearchOpenChange={setSearchOpen}
+                onConversationChange={() => void refreshLists()}
               />
             )
           )}

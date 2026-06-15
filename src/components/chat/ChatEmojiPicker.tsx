@@ -17,7 +17,7 @@ export function ChatEmojiPicker({
   onClose?: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState("recent");
+  const [tab, setTab] = useState(EMOJI_CATEGORIES[0].id);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,10 +30,16 @@ export function ChatEmojiPicker({
   }, [onClose]);
 
   const recent = getRecentEmojis();
-  const emojis =
-    tab === "recent"
-      ? (query ? filterEmojis(query) : recent.length ? recent : EMOJI_CATEGORIES[0].emojis)
-      : filterEmojis(query, tab === "search" ? undefined : tab);
+  const searching = !!query.trim();
+  const categoryEmojis = searching
+    ? filterEmojis(query)
+    : EMOJI_CATEGORIES.find((c) => c.id === tab)?.emojis ?? [];
+
+  function pick(emoji: string) {
+    pushRecentEmoji(emoji);
+    onPick(emoji);
+    onClose?.();
+  }
 
   return (
     <div
@@ -43,61 +49,65 @@ export function ChatEmojiPicker({
       <div className="p-2 border-b border-slate-100">
         <input
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            if (e.target.value) setTab("search");
-          }}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="Search emojis"
           className="w-full text-sm px-2 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
       </div>
-      <div className="flex gap-1 px-2 py-1.5 border-b border-slate-100 overflow-x-auto shrink-0">
-        <TabBtn active={tab === "recent"} onClick={() => setTab("recent")} label="Recent" />
-        {EMOJI_CATEGORIES.map((c) => (
-          <TabBtn key={c.id} active={tab === c.id} onClick={() => setTab(c.id)} label={c.label} />
-        ))}
-      </div>
-      <div className="flex-1 overflow-y-auto p-2 grid grid-cols-8 gap-0.5">
-        {emojis.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => {
-              pushRecentEmoji(emoji);
-              onPick(emoji);
-            }}
-            className="w-8 h-8 rounded hover:bg-slate-100 text-lg cursor-pointer"
-          >
-            {emoji}
-          </button>
-        ))}
-        {!emojis.length && (
-          <p className="col-span-8 text-xs text-slate-400 text-center py-4">No emojis found</p>
+      {!searching && (
+        <div className="flex gap-0.5 px-2 py-1.5 border-b border-slate-100 overflow-x-auto shrink-0">
+          {EMOJI_CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              title={c.label}
+              onClick={() => setTab(c.id)}
+              className={`w-8 h-8 shrink-0 rounded-md text-lg cursor-pointer ${
+                tab === c.id ? "bg-brand-50 ring-1 ring-brand-200" : "hover:bg-slate-50"
+              }`}
+            >
+              {c.icon}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-2">
+        {!searching && recent.length > 0 && (
+          <>
+            <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide px-1 mb-1">
+              Recent
+            </p>
+            <div className="grid grid-cols-8 gap-0.5 mb-2">
+              {recent.slice(0, 16).map((emoji) => (
+                <button
+                  key={`recent-${emoji}`}
+                  type="button"
+                  onClick={() => pick(emoji)}
+                  className="w-8 h-8 rounded hover:bg-slate-100 text-lg cursor-pointer"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <div className="grid grid-cols-8 gap-0.5">
+          {categoryEmojis.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => pick(emoji)}
+              className="w-8 h-8 rounded hover:bg-slate-100 text-lg cursor-pointer"
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+        {!categoryEmojis.length && (
+          <p className="text-xs text-slate-400 text-center py-4">No emojis found</p>
         )}
       </div>
     </div>
-  );
-}
-
-function TabBtn({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-2 py-1 rounded-md text-[11px] whitespace-nowrap cursor-pointer ${
-        active ? "bg-brand-50 text-brand-700 font-medium" : "text-slate-500 hover:bg-slate-50"
-      }`}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -106,7 +116,7 @@ export function ChatEmojiAutocomplete({
   onPick,
 }: {
   query: string;
-  onPick: (replacement: string) => void;
+  onPick: (code: string) => void;
 }) {
   const matches = filterShortcodes(query);
   if (!matches.length) return null;
@@ -116,7 +126,7 @@ export function ChatEmojiAutocomplete({
         <button
           key={code}
           type="button"
-          onClick={() => onPick(`:${code}:`)}
+          onClick={() => onPick(code)}
           className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-sm cursor-pointer"
         >
           <span>{emoji}</span>

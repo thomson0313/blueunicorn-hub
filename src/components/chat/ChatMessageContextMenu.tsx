@@ -1,7 +1,12 @@
 "use client";
 
+import { useLayoutEffect, useRef, useState } from "react";
+import { anchoredPosition } from "@/lib/anchored-position";
 import { QUICK_REACTIONS } from "@/lib/chat-emoji";
 import type { ChatMessage } from "@/lib/types";
+
+const MENU_WIDTH = 220;
+const MENU_HEIGHT = 280;
 
 export function ChatMessageContextMenu({
   x,
@@ -13,7 +18,6 @@ export function ChatMessageContextMenu({
   onEdit,
   onDelete,
   onCopy,
-  onSelect,
   onReact,
 }: {
   x: number;
@@ -25,15 +29,23 @@ export function ChatMessageContextMenu({
   onEdit: () => void;
   onDelete: () => void;
   onCopy: () => void;
-  onSelect: () => void;
   onReact: (emoji: string) => void;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const w = el?.offsetWidth || MENU_WIDTH;
+    const h = el?.offsetHeight || MENU_HEIGHT;
+    setPos(anchoredPosition(x, y, w, h));
+  }, [x, y]);
+
   const items = [
     { label: "Reply", action: onReply },
-    ...(mine && !message.deletedAt ? [{ label: "Edit", action: onEdit }] : []),
-    ...(mine && !message.deletedAt ? [{ label: "Delete", action: onDelete }] : []),
+    ...(mine ? [{ label: "Edit", action: onEdit }] : []),
+    ...(mine ? [{ label: "Delete", action: onDelete }] : []),
     { label: "Copy", action: onCopy },
-    { label: "Select", action: onSelect },
   ];
 
   return (
@@ -45,8 +57,9 @@ export function ChatMessageContextMenu({
         onClick={onClose}
       />
       <div
+        ref={ref}
         className="fixed z-50 min-w-[160px] bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-sm"
-        style={{ left: x, top: y }}
+        style={{ left: pos.left, top: pos.top }}
       >
         <div className="px-2 py-1.5 flex gap-1 border-b border-slate-100 mb-1">
           {QUICK_REACTIONS.map((emoji) => (
@@ -69,7 +82,7 @@ export function ChatMessageContextMenu({
             type="button"
             onClick={() => {
               item.action();
-              onClose();
+              if (item.label !== "Delete") onClose();
             }}
             className={`w-full text-left px-3 py-2 hover:bg-slate-50 cursor-pointer ${
               item.label === "Delete" ? "text-red-600" : "text-slate-700"

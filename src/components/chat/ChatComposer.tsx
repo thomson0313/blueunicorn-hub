@@ -13,14 +13,14 @@ export type OutgoingAttachment = {
 
 export function ChatComposer({
   placeholder,
-  disabled,
+  canSend = true,
   replyTo,
   onCancelReply,
   onSend,
   onActivity,
 }: {
   placeholder: string;
-  disabled?: boolean;
+  canSend?: boolean;
   replyTo?: { senderName: string; content: string } | null;
   onCancelReply?: () => void;
   onSend: (payload: { content: string; attachments: OutgoingAttachment[] }) => Promise<void>;
@@ -29,21 +29,24 @@ export function ChatComposer({
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<OutgoingAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const emojiRef = useRef<HTMLDivElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
   const hasContent = draft.trim().length > 0 || attachments.length > 0;
-  const colonMatch = draft.match(/:([a-z0-9_+-]{2,})$/i);
+  const colonMatch = draft.match(/:([a-z0-9_+-]{1,})$/i);
   const colonQuery = colonMatch?.[1] || "";
 
   const uploadFiles = useCallback(async (files: FileList | File[]) => {
     setUploading(true);
+    setUploadError(null);
     try {
       for (const file of Array.from(files)) {
         const fd = new FormData();
@@ -61,13 +64,15 @@ export function ChatComposer({
           },
         ]);
       }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
   }, []);
 
   async function handleSend() {
-    if (!hasContent || sending || disabled) return;
+    if (!hasContent || sending || !canSend) return;
     setSending(true);
     try {
       let content = draft.trim();
@@ -117,7 +122,7 @@ export function ChatComposer({
       rec.start();
       setRecording(true);
     } catch {
-      /* mic denied */
+      setUploadError("Microphone access denied");
     }
   }
 
@@ -127,6 +132,16 @@ export function ChatComposer({
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
   }, [draft]);
+
+  useEffect(() => {
+    if (!emojiOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (emojiRef.current?.contains(e.target as Node)) return;
+      setEmojiOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [emojiOpen]);
 
   return (
     <div
@@ -174,14 +189,18 @@ export function ChatComposer({
         </div>
       )}
 
+      {uploadError && (
+        <p className="px-3 pt-2 text-xs text-red-600">{uploadError}</p>
+      )}
+
       <div className="relative p-2">
         {colonQuery && (
           <ChatEmojiAutocomplete
             query={colonQuery}
-            onPick={(token) => {
-              const emoji = EMOJI_SHORTCODES[token.slice(1, -1)] || "";
+            onPick={(code) => {
+              const emoji = EMOJI_SHORTCODES[code] || "";
               if (!emoji) return;
-              setDraft((d) => d.replace(/:([a-z0-9_+-]{2,})$/i, emoji));
+              setDraft((d) => d.replace(/:([a-z0-9_+-]{1,})$/i, emoji));
             }}
           />
         )}
@@ -189,7 +208,7 @@ export function ChatComposer({
         <div className="flex items-end gap-1 rounded-xl border border-slate-300 px-2 py-1.5 focus-within:ring-2 focus-within:ring-brand-500">
           <button
             type="button"
-            disabled={disabled || uploading}
+            disabled={uploading}
             onClick={() => fileRef.current?.click()}
             className="shrink-0 w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
             aria-label="Attach file"
@@ -218,20 +237,16 @@ export function ChatComposer({
             }}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            disabled={disabled || sending}
+            disabled={sending}
             rows={1}
             className="flex-1 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
           />
 
-          <div
-            className="relative shrink-0"
-            onMouseEnter={() => setEmojiOpen(true)}
-            onMouseLeave={() => setEmojiOpen(false)}
-          >
+          <div className="relative shrink-0" ref={emojiRef}>
             <button
               type="button"
-              disabled={disabled}
-              className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
+              onClick={() => setEmojiOpen((o) => !o)}
+              className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer"
               aria-label="Emoji"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -251,7 +266,7 @@ export function ChatComposer({
 
           <button
             type="button"
-            disabled={disabled || sending || uploading || (recording ? false : !hasContent && !recording)}
+            disabled={sending || uploading || (hasContent ? !canSend : false)}
             onClick={() => void toggleVoice()}
             className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 ${
               hasContent

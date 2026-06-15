@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { CreateChannelModal } from "@/components/chat/CreateChannelModal";
+import { PanelSkeleton } from "@/components/skeleton/PanelSkeleton";
 import { formatPreviewTime, truncatePreview } from "@/lib/chat-format";
 import { parseChatTarget } from "@/lib/chat-target";
 import type { ChatChannel, ChatConversationPreview, PublicUser } from "@/lib/types";
@@ -21,6 +22,7 @@ export function ChatRightSidebar({
   activeTarget,
   onSelect,
   onRefresh,
+  loading = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -32,6 +34,7 @@ export function ChatRightSidebar({
   activeTarget: string | null;
   onSelect: (target: string) => void;
   onRefresh: () => void;
+  loading?: boolean;
   embedded?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("dm");
@@ -127,7 +130,9 @@ export function ChatRightSidebar({
         </div>
 
         <div className="flex-1 overflow-y-auto p-2">
-          {tab === "dm" ? (
+          {loading ? (
+            <PanelSkeleton variant="list" rows={8} />
+          ) : tab === "dm" ? (
             dmItems.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-8">No conversations</p>
             ) : (
