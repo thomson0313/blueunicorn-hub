@@ -462,7 +462,7 @@ export function ScreenSharePanel() {
               className={
                 fullscreen
                   ? "fixed inset-0 z-50 bg-black flex items-center justify-center"
-                  : "relative aspect-video bg-slate-900 rounded-lg overflow-hidden"
+                  : "flex relative aspect-video bg-slate-900 rounded-lg overflow-hidden"
               }
             >
               {showHostStage ? (
