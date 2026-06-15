@@ -21,6 +21,7 @@ export function ChatMessageContextMenu({
   onDelete,
   onCopy,
   onCopyImage,
+  onDownloadAttachments,
   onReact,
 }: {
   x: number;
@@ -33,6 +34,7 @@ export function ChatMessageContextMenu({
   onDelete: () => void;
   onCopy: () => void;
   onCopyImage?: () => void;
+  onDownloadAttachments?: () => void;
   onReact: (emoji: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -49,12 +51,22 @@ export function ChatMessageContextMenu({
     setPos(anchoredPosition(x, y, w, h));
   }, [x, y]);
 
+  const attachmentCount = message.attachments?.length ?? 0;
+
   const items = [
     { label: "Reply", action: onReply },
     ...(mine && hasText && !hasAttachments ? [{ label: "Edit", action: onEdit }] : []),
     ...(mine ? [{ label: "Delete", action: onDelete }] : []),
     ...(hasText && !hasAttachments ? [{ label: "Copy", action: onCopy }] : []),
     ...(hasImage && onCopyImage ? [{ label: "Copy image", action: onCopyImage }] : []),
+    ...(attachmentCount > 0 && onDownloadAttachments
+      ? [
+          {
+            label: attachmentCount > 1 ? "Download attachments" : "Download attachment",
+            action: onDownloadAttachments,
+          },
+        ]
+      : []),
   ];
 
   return createPortal(

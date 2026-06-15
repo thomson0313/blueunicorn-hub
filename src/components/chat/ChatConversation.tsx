@@ -9,6 +9,7 @@ import { ChatMessageBubble } from "@/components/chat/ChatMessageBubble";
 import { ChatMessageContextMenu } from "@/components/chat/ChatMessageContextMenu";
 import { dmConversationKey, parseChatTarget, targetLabel } from "@/lib/chat-target";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
+import { downloadChatAttachment } from "@/lib/chat-attachment-actions";
 import type { ChatChannel, ChatMessage, PublicUser } from "@/lib/types";
 
 export function ChatConversation({
@@ -395,6 +396,12 @@ export function ChatConversation({
     }
   }
 
+  function downloadMessageAttachments(message: ChatMessage) {
+    for (const att of message.attachments || []) {
+      void downloadChatAttachment(att.fileUrl, att.fileName);
+    }
+  }
+
   function senderAvatar(senderId: string) {
     if (senderId === user.sub) return avatarUrl;
     return users.find((u) => u._id === senderId)?.avatarUrl;
@@ -504,6 +511,7 @@ export function ChatConversation({
           onDelete={() => setDeleteTarget(menu.message)}
           onCopy={() => void navigator.clipboard.writeText(menu.message.content)}
           onCopyImage={() => void copyMessageImage(menu.message)}
+          onDownloadAttachments={() => downloadMessageAttachments(menu.message)}
           onReact={(emoji) => void reactToMessage(menu.message._id, emoji)}
         />
       )}

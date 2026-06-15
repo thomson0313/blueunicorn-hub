@@ -42,7 +42,7 @@ export function ChatComposer({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const busy = uploading || recording || sending;
+  const inputBusy = uploading || sending;
   const hasContent = draft.trim().length > 0 || attachments.length > 0;
   const colonMatch = draft.match(/:([a-z0-9_+-]{1,})$/i);
   const colonQuery = colonMatch?.[1] || "";
@@ -75,7 +75,7 @@ export function ChatComposer({
   }, []);
 
   async function handleSend() {
-    if (!hasContent || busy || !canSend) return;
+    if (!hasContent || inputBusy || recording || !canSend) return;
     setSending(true);
     try {
       let content = draft.trim();
@@ -167,13 +167,13 @@ export function ChatComposer({
       className={`border-t border-slate-200 bg-white shrink-0 ${dragOver ? "ring-2 ring-brand-400 ring-inset" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
-        if (!busy) setDragOver(true);
+        if (!inputBusy && !recording) setDragOver(true);
       }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
         e.preventDefault();
         setDragOver(false);
-        if (!busy && e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
+        if (!inputBusy && !recording && e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
       }}
     >
       {replyTo && (
@@ -210,7 +210,7 @@ export function ChatComposer({
               <button
                 type="button"
                 onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-700 text-white text-xs flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100"
+                className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-slate-800 text-white text-xs flex items-center justify-center cursor-pointer shadow-md hover:bg-slate-900 z-10"
                 aria-label="Remove attachment"
               >
                 ×
@@ -232,7 +232,7 @@ export function ChatComposer({
       )}
 
       <div className="relative p-2">
-        {colonQuery && !busy && (
+        {colonQuery && !inputBusy && !recording && (
           <ChatEmojiAutocomplete
             query={colonQuery}
             onPick={(code) => {
@@ -244,11 +244,13 @@ export function ChatComposer({
         )}
 
         <div className={`flex items-end gap-1 rounded-xl border px-2 py-1.5 ${
-          busy ? "border-slate-200 bg-slate-50 opacity-60" : "border-slate-300 focus-within:ring-2 focus-within:ring-brand-500"
-        }`}>
+          inputBusy || recording
+            ? "border-slate-200 bg-slate-50"
+            : "border-slate-300 focus-within:ring-2 focus-within:ring-brand-500"
+        } ${inputBusy && !recording ? "opacity-60" : ""}`}>
           <button
             type="button"
-            disabled={busy}
+            disabled={inputBusy || recording}
             onClick={() => fileRef.current?.click()}
             className="shrink-0 w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
             aria-label="Attach file"
@@ -278,8 +280,8 @@ export function ChatComposer({
             }}
             onKeyDown={onKeyDown}
             onPaste={handlePaste}
-            placeholder={busy ? (recording ? "Recording…" : "Uploading…") : placeholder}
-            disabled={busy}
+            placeholder={recording ? "Recording…" : inputBusy ? "Uploading…" : placeholder}
+            disabled={inputBusy || recording}
             rows={1}
             className="flex-1 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
           />
@@ -287,7 +289,7 @@ export function ChatComposer({
           <div className="relative shrink-0" ref={emojiRef}>
             <button
               type="button"
-              disabled={busy}
+              disabled={inputBusy || recording}
               onClick={() => setEmojiOpen((o) => !o)}
               className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
               aria-label="Emoji"
@@ -299,7 +301,7 @@ export function ChatComposer({
                 <line x1="15" y1="9" x2="15.01" y2="9" />
               </svg>
             </button>
-            {emojiOpen && !busy && (
+            {emojiOpen && !inputBusy && !recording && (
               <ChatEmojiPicker
                 onPick={(emoji) => setDraft((d) => d + emoji)}
                 onClose={() => setEmojiOpen(false)}
@@ -309,7 +311,13 @@ export function ChatComposer({
 
           <button
             type="button"
-            disabled={busy || (hasContent ? !canSend : false)}
+            disabled={
+              recording
+                ? false
+                : hasContent
+                  ? !canSend || inputBusy
+                  : inputBusy
+            }
             onClick={() => void toggleVoice()}
             className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 ${
               hasContent
@@ -324,6 +332,10 @@ export function ChatComposer({
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            ) : recording ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <rect x="6" y="6" width="12" height="12" rx="1" />
               </svg>
             ) : (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
