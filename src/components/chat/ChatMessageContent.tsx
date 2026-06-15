@@ -1,6 +1,6 @@
 "use client";
 
-import { isAudioMime, isImageMime, isVideoMime } from "@/lib/chat-storage";
+import { isAudioMime, isImageMime, isVideoMime } from "@/lib/chat-attachment-utils";
 import { splitMessageContent } from "@/lib/chat-format";
 import type { ChatMessage } from "@/lib/types";
 
