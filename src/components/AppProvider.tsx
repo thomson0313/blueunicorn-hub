@@ -184,6 +184,10 @@ export function AppProvider({
       const other = fromSelf ? m.recipient || "" : m.sender._id;
       bumpUnread(other, fromSelf);
     });
+    s.on("channel:message", (m: ChatMessage) => {
+      const key = m.channelId ? `channel:${m.channelId}` : "general";
+      bumpUnread(key, m.sender._id === user.sub);
+    });
 
     return () => {
       s.disconnect();

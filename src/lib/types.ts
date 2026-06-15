@@ -94,12 +94,66 @@ export type ProjectComment = {
   replies: ProjectComment[];
 };
 
+export type ChatMessageAttachment = {
+  _id: string;
+  fileName: string;
+  fileUrl: string;
+  mimeType: string;
+  fileSize: number;
+};
+
+export type ChatMessageReaction = {
+  emoji: string;
+  userId: string;
+  userName: string;
+};
+
+export type ChatMessageReplyPreview = {
+  _id: string;
+  content: string;
+  senderName: string;
+  deleted: boolean;
+};
+
 export type ChatMessage = {
   _id: string;
   sender: { _id: string; name: string; role: Role };
   recipient?: string;
+  channelId?: string | null;
+  parentId?: string | null;
   content: string;
   createdAt: string;
+  updatedAt?: string;
+  editedAt?: string | null;
+  deletedAt?: string | null;
+  attachments?: ChatMessageAttachment[];
+  reactions?: ChatMessageReaction[];
+  replyTo?: ChatMessageReplyPreview | null;
+  /** Client-only: optimistic send in flight */
+  pending?: boolean;
+};
+
+export type ChatChannel = {
+  _id: string;
+  name: string;
+  visibility: "public" | "private";
+  createdBy: string;
+  createdAt: string;
+};
+
+export type ChatConversationPreview = {
+  key: string;
+  target: string;
+  kind: "general" | "dm" | "channel";
+  title: string;
+  subtitle?: string;
+  lastMessage?: string;
+  lastSenderName?: string;
+  lastAt?: string;
+  avatarName?: string;
+  avatarUrl?: string | null;
+  online?: boolean;
+  visibility?: "public" | "private";
 };
 
 export type AlertItem = {

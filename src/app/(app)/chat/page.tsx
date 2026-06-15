@@ -1,46 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ChatSidebarList } from "@/components/chat/ChatSidebarList";
+import { useCallback, useEffect, useState } from "react";
 import { ChatConversation } from "@/components/chat/ChatConversation";
+import { ChatRightSidebar } from "@/components/chat/ChatRightSidebar";
 import { PanelLoader } from "@/components/PanelLoader";
 import { useApp } from "@/components/AppProvider";
-import type { PublicUser } from "@/lib/types";
+import type { ChatChannel, ChatConversationPreview, PublicUser } from "@/lib/types";
 
 export default function ChatPage() {
   const { onlineUserIds, unread } = useApp();
   const [users, setUsers] = useState<PublicUser[]>([]);
+  const [channels, setChannels] = useState<ChatChannel[]>([]);
+  const [previews, setPreviews] = useState<ChatConversationPreview[]>([]);
   const [loading, setLoading] = useState(true);
   const [target, setTarget] = useState("general");
 
-  useEffect(() => {
-    fetch("/api/users")
-      .then((r) => r.json())
-      .then((d) => setUsers(d.users || []))
-      .finally(() => setLoading(false));
+  const refresh = useCallback(async () => {
+    const [usersRes, channelsRes] = await Promise.all([
+      fetch("/api/users"),
+      fetch("/api/chat/channels"),
+    ]);
+    const usersData = await usersRes.json();
+    const channelsData = await channelsRes.json();
+    setUsers(usersData.users || []);
+    setChannels(channelsData.channels || []);
+    setPreviews(channelsData.previews || []);
   }, []);
+
+  useEffect(() => {
+    void refresh().finally(() => setLoading(false));
+  }, [refresh]);
 
   if (loading) {
     return <PanelLoader variant="chat" />;
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 h-[calc(100vh-9rem)]">
-      <aside className="bg-white rounded-xl border border-slate-200 p-3 overflow-y-auto">
-        <ChatSidebarList
-          users={users}
-          target={target}
-          onlineUserIds={onlineUserIds}
-          unread={unread}
-          onSelect={setTarget}
-        />
-      </aside>
-      <section className="bg-white rounded-xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
-        <header className="px-5 py-3 border-b border-slate-200">
-          <h1 className="font-semibold text-slate-900">Chat</h1>
-        </header>
-        <ChatConversation target={target} users={users} className="flex-1" />
-      </section>
+    <div className="relative h-[calc(100vh-9rem)]">
+      <div className="h-full mr-80 bg-white rounded-xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
+        <ChatConversation target={target} users={users} channels={channels} className="flex-1" />
+      </div>
+      <ChatRightSidebar
+        open
+        embedded
+        onClose={() => {}}
+        users={users}
+        channels={channels}
+        previews={previews}
+        onlineUserIds={onlineUserIds}
+        unread={unread}
+        activeTarget={target}
+        onSelect={setTarget}
+        onRefresh={() => void refresh()}
+      />
     </div>
   );
 }

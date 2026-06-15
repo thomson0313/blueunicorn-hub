@@ -7,7 +7,12 @@ import { Server as SocketIOServer, type Socket } from "socket.io";
 import { parse as parseCookie } from "cookie";
 import { connectDB } from "./src/lib/db";
 import { verifySession, COOKIE_NAME, type SessionPayload } from "./src/lib/auth";
-import { dmKeyFor, createMessage } from "./src/lib/repo";
+import {
+  handleChannelSend,
+  handleDmSend,
+  handleGeneralSend,
+} from "./src/lib/chat-socket";
+import { listAccessibleChannels, setReadCursor } from "./src/lib/chat-repo";
 import type { ScreenShareState, ScreenShareParticipant } from "./src/lib/screen-share-types";
 
 // Load .env.local / .env so this standalone process has the same env as Next.
@@ -100,6 +105,10 @@ app.prepare().then(async () => {
 
     socket.join(`user:${userId}`);
     socket.join("general");
+
+    void listAccessibleChannels(userId).then((channels) => {
+      for (const ch of channels) socket.join(`channel:${ch._id}`);
+    });
 
     onlineCounts.set(userId, (onlineCounts.get(userId) || 0) + 1);
     io.emit("presence:update", onlineUserIds());
@@ -223,43 +232,50 @@ app.prepare().then(async () => {
       }
     );
 
-    socket.on("general:send", async (payload: { content: string }) => {
-      const content = (payload?.content || "").trim();
-      if (!content) return;
-      const doc = await createMessage({
-        sender: userId,
-        channelType: "general",
-        content,
-      });
-      io.to("general").emit("general:message", {
-        _id: doc._id,
-        sender: { _id: userId, name: user.name, role: user.role },
-        content,
-        createdAt: doc.createdAt,
-      });
+    socket.on("general:send", async (payload) => {
+      await handleGeneralSend(io, user, payload);
     });
 
-    socket.on("dm:send", async (payload: { to: string; content: string }) => {
-      const content = (payload?.content || "").trim();
-      const to = payload?.to;
-      if (!content || !to) return;
-      const doc = await createMessage({
-        sender: userId,
-        channelType: "dm",
-        recipient: to,
-        dmKey: dmKeyFor(userId, to),
-        content,
-      });
-      const message = {
-        _id: doc._id,
-        sender: { _id: userId, name: user.name, role: user.role },
-        recipient: to,
-        content,
-        createdAt: doc.createdAt,
-      };
-      io.to(`user:${to}`).emit("dm:message", message);
-      io.to(`user:${userId}`).emit("dm:message", message);
+    socket.on("dm:send", async (payload) => {
+      await handleDmSend(io, user, payload);
     });
+
+    socket.on("channel:send", async (payload) => {
+      await handleChannelSend(io, user, payload);
+    });
+
+    socket.on(
+      "chat:typing",
+      (payload: { target?: string; typing?: boolean }) => {
+        const target = payload?.target;
+        if (!target) return;
+        const event = {
+          target,
+          userId,
+          userName: user.name,
+          typing: !!payload?.typing,
+        };
+        if (target === "general") {
+          socket.to("general").emit("chat:typing", event);
+          return;
+        }
+        if (target.startsWith("channel:")) {
+          io.to(target).emit("chat:typing", event);
+          return;
+        }
+        io.to(`user:${target}`).emit("chat:typing", event);
+      }
+    );
+
+    socket.on(
+      "chat:read",
+      async (payload: { conversationKey?: string; lastReadAt?: string }) => {
+        const key = payload?.conversationKey;
+        if (!key) return;
+        await setReadCursor(userId, key, payload.lastReadAt);
+        io.emit("chat:read", { conversationKey: key, userId, lastReadAt: payload.lastReadAt });
+      }
+    );
 
     socket.on("disconnect", async () => {
       if (screenShareSession) {
