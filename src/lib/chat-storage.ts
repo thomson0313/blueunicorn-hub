@@ -14,7 +14,7 @@ async function storeLocal(
   const filename = `${userId}-${Date.now()}-${safeName || `file.${ext}`}`;
   await fs.writeFile(path.join(uploadsDir, filename), buffer);
   return {
-    url: `/uploads/chat/${filename}`,
+    url: `/api/chat/files/${encodeURIComponent(filename)}`,
     mimeType: file.type || "application/octet-stream",
     fileName: file.name,
     fileSize: file.size,

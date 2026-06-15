@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatEmojiAutocomplete, ChatEmojiPicker } from "@/components/chat/ChatEmojiPicker";
+import { isImageMime } from "@/lib/chat-attachment-utils";
+import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { EMOJI_SHORTCODES } from "@/lib/chat-emoji";
 
 export type OutgoingAttachment = {
@@ -40,6 +42,7 @@ export function ChatComposer({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
+  const busy = uploading || recording || sending;
   const hasContent = draft.trim().length > 0 || attachments.length > 0;
   const colonMatch = draft.match(/:([a-z0-9_+-]{1,})$/i);
   const colonQuery = colonMatch?.[1] || "";
@@ -58,7 +61,7 @@ export function ChatComposer({
           ...prev,
           {
             fileName: data.attachment.fileName,
-            fileUrl: data.attachment.url,
+            fileUrl: resolveChatAttachmentUrl(data.attachment.url),
             mimeType: data.attachment.mimeType,
             fileSize: data.attachment.fileSize,
           },
@@ -72,7 +75,7 @@ export function ChatComposer({
   }, []);
 
   async function handleSend() {
-    if (!hasContent || sending || !canSend) return;
+    if (!hasContent || busy || !canSend) return;
     setSending(true);
     try {
       let content = draft.trim();
@@ -92,6 +95,22 @@ export function ChatComposer({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
+    }
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length) {
+      e.preventDefault();
+      void uploadFiles(files);
     }
   }
 
@@ -148,20 +167,20 @@ export function ChatComposer({
       className={`border-t border-slate-200 bg-white shrink-0 ${dragOver ? "ring-2 ring-brand-400 ring-inset" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
-        setDragOver(true);
+        if (!busy) setDragOver(true);
       }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
         e.preventDefault();
         setDragOver(false);
-        if (e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
+        if (!busy && e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
       }}
     >
       {replyTo && (
         <div className="px-3 pt-2 flex items-center justify-between gap-2 text-xs bg-slate-50 border-b border-slate-100">
           <div className="truncate">
-            Replying to <span className="font-semibold">{replyTo.senderName}</span>:{" "}
-            {replyTo.content.slice(0, 60)}
+            Replying to <span className="font-semibold">{replyTo.senderName}</span>
+            {replyTo.content ? `: ${replyTo.content.slice(0, 60)}` : null}
           </div>
           <button type="button" onClick={onCancelReply} className="text-slate-500 hover:text-slate-700 cursor-pointer">
             ×
@@ -170,22 +189,41 @@ export function ChatComposer({
       )}
 
       {attachments.length > 0 && (
-        <div className="px-3 pt-2 flex flex-wrap gap-1">
+        <div className="px-3 pt-2 flex flex-wrap gap-2">
           {attachments.map((a, i) => (
-            <span
-              key={`${a.fileUrl}-${i}`}
-              className="inline-flex items-center gap-1 text-xs bg-slate-100 rounded-full px-2 py-1"
-            >
-              📎 {a.fileName}
+            <div key={`${a.fileUrl}-${i}`} className="relative group">
+              {isImageMime(a.mimeType) ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={resolveChatAttachmentUrl(a.fileUrl)}
+                  alt={a.fileName}
+                  className="h-16 w-16 rounded-lg object-cover border border-slate-200"
+                />
+              ) : (
+                <div className="h-16 w-16 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400" aria-hidden>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                className="cursor-pointer"
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-700 text-white text-xs flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100"
+                aria-label="Remove attachment"
               >
                 ×
               </button>
-            </span>
+            </div>
           ))}
+        </div>
+      )}
+
+      {(uploading || recording) && (
+        <div className="px-3 pt-2 flex items-center gap-2 text-xs text-brand-600">
+          <div className="w-3.5 h-3.5 rounded-full border-2 border-brand-200 border-t-brand-500 animate-spin" />
+          {recording ? "Recording voice message…" : "Uploading…"}
         </div>
       )}
 
@@ -194,7 +232,7 @@ export function ChatComposer({
       )}
 
       <div className="relative p-2">
-        {colonQuery && (
+        {colonQuery && !busy && (
           <ChatEmojiAutocomplete
             query={colonQuery}
             onPick={(code) => {
@@ -205,10 +243,12 @@ export function ChatComposer({
           />
         )}
 
-        <div className="flex items-end gap-1 rounded-xl border border-slate-300 px-2 py-1.5 focus-within:ring-2 focus-within:ring-brand-500">
+        <div className={`flex items-end gap-1 rounded-xl border px-2 py-1.5 ${
+          busy ? "border-slate-200 bg-slate-50 opacity-60" : "border-slate-300 focus-within:ring-2 focus-within:ring-brand-500"
+        }`}>
           <button
             type="button"
-            disabled={uploading}
+            disabled={busy}
             onClick={() => fileRef.current?.click()}
             className="shrink-0 w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
             aria-label="Attach file"
@@ -221,6 +261,7 @@ export function ChatComposer({
             ref={fileRef}
             type="file"
             multiple
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip"
             className="hidden"
             onChange={(e) => {
               if (e.target.files?.length) void uploadFiles(e.target.files);
@@ -236,8 +277,9 @@ export function ChatComposer({
               onActivity?.();
             }}
             onKeyDown={onKeyDown}
-            placeholder={placeholder}
-            disabled={sending}
+            onPaste={handlePaste}
+            placeholder={busy ? (recording ? "Recording…" : "Uploading…") : placeholder}
+            disabled={busy}
             rows={1}
             className="flex-1 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
           />
@@ -245,8 +287,9 @@ export function ChatComposer({
           <div className="relative shrink-0" ref={emojiRef}>
             <button
               type="button"
+              disabled={busy}
               onClick={() => setEmojiOpen((o) => !o)}
-              className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer"
+              className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
               aria-label="Emoji"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -256,7 +299,7 @@ export function ChatComposer({
                 <line x1="15" y1="9" x2="15.01" y2="9" />
               </svg>
             </button>
-            {emojiOpen && (
+            {emojiOpen && !busy && (
               <ChatEmojiPicker
                 onPick={(emoji) => setDraft((d) => d + emoji)}
                 onClose={() => setEmojiOpen(false)}
@@ -266,7 +309,7 @@ export function ChatComposer({
 
           <button
             type="button"
-            disabled={sending || uploading || (hasContent ? !canSend : false)}
+            disabled={busy || (hasContent ? !canSend : false)}
             onClick={() => void toggleVoice()}
             className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 ${
               hasContent
@@ -291,7 +334,7 @@ export function ChatComposer({
             )}
           </button>
         </div>
-        <p className="text-[10px] text-slate-400 mt-1 px-1">Shift+Enter for new line</p>
+        <p className="text-[10px] text-slate-400 mt-1 px-1">Shift+Enter for new line · Paste images to attach</p>
       </div>
     </div>
   );

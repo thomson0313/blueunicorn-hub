@@ -13,7 +13,7 @@ export default function ChatPage() {
   const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [previews, setPreviews] = useState<ChatConversationPreview[]>([]);
   const [loading, setLoading] = useState(true);
-  const [target, setTarget] = useState("general");
+  const [target, setTarget] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const [usersRes, channelsRes] = await Promise.all([
@@ -38,13 +38,21 @@ export default function ChatPage() {
   return (
     <div className="relative h-[calc(100vh-9rem)]">
       <div className="h-full mr-80 bg-white rounded-xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
-        <ChatConversation
-          target={target}
-          users={users}
-          channels={channels}
-          className="flex-1"
-          onConversationChange={() => void refresh()}
-        />
+        {target ? (
+          <ChatConversation
+            target={target}
+            users={users}
+            channels={channels}
+            className="flex-1"
+            onMessageDeleted={() => void refresh()}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <p className="text-slate-400 text-sm text-center">
+              Please select a chat to start…
+            </p>
+          </div>
+        )}
       </div>
       <ChatRightSidebar
         open
@@ -56,7 +64,6 @@ export default function ChatPage() {
         onlineUserIds={onlineUserIds}
         unread={unread}
         activeTarget={target}
-        loading={loading}
         onSelect={setTarget}
         onRefresh={() => void refresh()}
       />

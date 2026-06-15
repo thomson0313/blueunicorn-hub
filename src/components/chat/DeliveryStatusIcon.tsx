@@ -2,6 +2,25 @@
 
 import type { ChatMessage } from "@/lib/types";
 
+/** Single check — sent. */
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M1 6.5L5.5 11L15 1" />
+    </svg>
+  );
+}
+
+/** Double check — read (check-check). */
+function DoubleCheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M1 6.5L5.5 11L15 1" />
+      <path d="M5 6.5L9.5 11L19 1" />
+    </svg>
+  );
+}
+
 export function DeliveryStatusIcon({
   message,
   peerReadAt,
@@ -21,16 +40,7 @@ export function DeliveryStatusIcon({
   }
   const seen = peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt);
   if (seen) {
-    return (
-      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-        <path d="M20 6L9 17l-5-5" />
-        <path d="M15 6l5 5" />
-      </svg>
-    );
+    return <DoubleCheckIcon className="w-4 h-3 opacity-95" />;
   }
-  return (
-    <svg className="w-3.5 h-3.5 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
-  );
+  return <CheckIcon className="w-3.5 h-3 opacity-80" />;
 }

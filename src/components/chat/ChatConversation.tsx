@@ -8,6 +8,7 @@ import { ChatConversationHeader } from "@/components/chat/ChatConversationHeader
 import { ChatMessageBubble } from "@/components/chat/ChatMessageBubble";
 import { ChatMessageContextMenu } from "@/components/chat/ChatMessageContextMenu";
 import { dmConversationKey, parseChatTarget, targetLabel } from "@/lib/chat-target";
+import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import type { ChatChannel, ChatMessage, PublicUser } from "@/lib/types";
 
 export function ChatConversation({
@@ -19,7 +20,7 @@ export function ChatConversation({
   onTypingChange,
   searchOpen: searchOpenProp,
   onSearchOpenChange,
-  onConversationChange,
+  onMessageDeleted,
 }: {
   target: string;
   users: PublicUser[];
@@ -29,7 +30,7 @@ export function ChatConversation({
   onTypingChange?: (name: string | null) => void;
   searchOpen?: boolean;
   onSearchOpenChange?: (open: boolean) => void;
-  onConversationChange?: () => void;
+  onMessageDeleted?: () => void;
 }) {
   const { user, socket, socketConnected, avatarUrl, onlineUserIds, setActiveConversation, clearUnread } = useApp();
   const realtimeMode = useRealtimeMode();
@@ -119,8 +120,8 @@ export function ChatConversation({
 
   const removeMessage = useCallback((messageId: string) => {
     setMessages((prev) => prev.filter((m) => m._id !== messageId));
-    onConversationChange?.();
-  }, [onConversationChange]);
+    onMessageDeleted?.();
+  }, [onMessageDeleted]);
 
   useEffect(() => {
     if (realtimeMode !== "socket" || !socket) return;
@@ -157,10 +158,7 @@ export function ChatConversation({
     };
 
     const onUpdated = (msg: ChatMessage) => {
-      if (match(msg)) {
-        upsertMessage(msg);
-        onConversationChange?.();
-      }
+      if (match(msg)) upsertMessage(msg);
     };
 
     const onAny = (msg: ChatMessage) => {
@@ -235,7 +233,7 @@ export function ChatConversation({
     removeMessage,
     onTypingChange,
     markRead,
-    onConversationChange,
+    onMessageDeleted,
   ]);
 
   useEffect(() => {
@@ -346,7 +344,6 @@ export function ChatConversation({
     }
     setMessages((prev) => prev.map((m) => (m._id === tempId ? data.message : m)));
     lastMessageAtRef.current = data.message.createdAt;
-    onConversationChange?.();
   }
 
   async function reactToMessage(messageId: string, emoji: string) {
@@ -380,12 +377,22 @@ export function ChatConversation({
       body: JSON.stringify({ content: editDraft.trim() }),
     });
     const data = await res.json();
-    if (res.ok && data.message) {
-      upsertMessage(data.message);
-      onConversationChange?.();
-    }
+    if (res.ok && data.message) upsertMessage(data.message);
     setEditId(null);
     setEditDraft("");
+  }
+
+  async function copyMessageImage(message: ChatMessage) {
+    const img = message.attachments?.find((a) => a.mimeType.startsWith("image/"));
+    if (!img) return;
+    try {
+      const url = resolveChatAttachmentUrl(img.fileUrl);
+      const res = await fetch(url);
+      const blob = await res.blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+    } catch {
+      /* clipboard unsupported */
+    }
   }
 
   function senderAvatar(senderId: string) {
@@ -474,7 +481,7 @@ export function ChatConversation({
         canSend={connected}
         replyTo={
           replyTo
-            ? { senderName: replyTo.sender.name, content: replyTo.content || "Attachment" }
+            ? { senderName: replyTo.sender.name, content: replyTo.content }
             : null
         }
         onCancelReply={() => setReplyTo(null)}
@@ -496,6 +503,7 @@ export function ChatConversation({
           }}
           onDelete={() => setDeleteTarget(menu.message)}
           onCopy={() => void navigator.clipboard.writeText(menu.message.content)}
+          onCopyImage={() => void copyMessageImage(menu.message)}
           onReact={(emoji) => void reactToMessage(menu.message._id, emoji)}
         />
       )}

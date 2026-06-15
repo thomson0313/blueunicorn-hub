@@ -1,7 +1,9 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { anchoredPosition } from "@/lib/anchored-position";
+import { isImageMime } from "@/lib/chat-attachment-utils";
 import { QUICK_REACTIONS } from "@/lib/chat-emoji";
 import type { ChatMessage } from "@/lib/types";
 
@@ -18,6 +20,7 @@ export function ChatMessageContextMenu({
   onEdit,
   onDelete,
   onCopy,
+  onCopyImage,
   onReact,
 }: {
   x: number;
@@ -29,10 +32,15 @@ export function ChatMessageContextMenu({
   onEdit: () => void;
   onDelete: () => void;
   onCopy: () => void;
+  onCopyImage?: () => void;
   onReact: (emoji: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
+
+  const hasAttachments = (message.attachments?.length ?? 0) > 0;
+  const hasText = !!message.content?.trim();
+  const hasImage = message.attachments?.some((a) => isImageMime(a.mimeType));
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -43,22 +51,23 @@ export function ChatMessageContextMenu({
 
   const items = [
     { label: "Reply", action: onReply },
-    ...(mine ? [{ label: "Edit", action: onEdit }] : []),
+    ...(mine && hasText && !hasAttachments ? [{ label: "Edit", action: onEdit }] : []),
     ...(mine ? [{ label: "Delete", action: onDelete }] : []),
-    { label: "Copy", action: onCopy },
+    ...(hasText && !hasAttachments ? [{ label: "Copy", action: onCopy }] : []),
+    ...(hasImage && onCopyImage ? [{ label: "Copy image", action: onCopyImage }] : []),
   ];
 
-  return (
+  return createPortal(
     <>
       <button
         type="button"
-        className="fixed inset-0 z-40 cursor-default"
+        className="fixed inset-0 z-[200] cursor-default"
         aria-label="Close menu"
         onClick={onClose}
       />
       <div
         ref={ref}
-        className="fixed z-50 min-w-[160px] bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-sm"
+        className="fixed z-[201] min-w-[160px] bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-sm"
         style={{ left: pos.left, top: pos.top }}
       >
         <div className="px-2 py-1.5 flex gap-1 border-b border-slate-100 mb-1">
@@ -92,6 +101,7 @@ export function ChatMessageContextMenu({
           </button>
         ))}
       </div>
-    </>
+    </>,
+    document.body
   );
 }

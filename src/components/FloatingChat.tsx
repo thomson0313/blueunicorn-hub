@@ -25,7 +25,7 @@ export function FloatingChat() {
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [channels, setChannels] = useState<ChatChannel[]>([]);
   const [previews, setPreviews] = useState<ChatConversationPreview[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const refreshLists = useCallback(async () => {
     setLoading(true);
@@ -45,8 +45,8 @@ export function FloatingChat() {
   }, []);
 
   useEffect(() => {
-    if (sidebarOpen || popupTarget) void refreshLists();
-  }, [sidebarOpen, popupTarget, refreshLists]);
+    void refreshLists();
+  }, [refreshLists]);
 
   function openConversation(target: string) {
     setPopupTarget(target);
@@ -69,7 +69,7 @@ export function FloatingChat() {
         onlineUserIds={onlineUserIds}
         unread={unread}
         activeTarget={popupTarget}
-        loading={loading}
+        loading={loading && users.length === 0}
         onSelect={openConversation}
         onRefresh={() => void refreshLists()}
       />
@@ -103,8 +103,8 @@ export function FloatingChat() {
             }}
             onToggleSearch={() => setSearchOpen((o) => !o)}
           />
-          {!popupMinimized && (
-            loading && users.length === 0 ? (
+          <div className={popupMinimized ? "hidden" : "flex flex-col flex-1 min-h-0"}>
+            {loading && users.length === 0 ? (
               <PanelLoader variant="chat" />
             ) : (
               <ChatConversation
@@ -116,10 +116,10 @@ export function FloatingChat() {
                 onTypingChange={setPopupTyping}
                 searchOpen={searchOpen}
                 onSearchOpenChange={setSearchOpen}
-                onConversationChange={() => void refreshLists()}
+                onMessageDeleted={() => void refreshLists()}
               />
-            )
-          )}
+            )}
+          </div>
         </div>
       )}
 

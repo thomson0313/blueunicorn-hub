@@ -78,21 +78,29 @@ export function ChatMessageBubble({
                 value={editDraft ?? ""}
                 onChange={(e) => onEditDraftChange?.(e.target.value)}
                 rows={2}
-                className="w-full text-sm rounded-lg border border-slate-300 px-2 py-1.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                className={`w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 resize-none ${
+                  mine
+                    ? "bg-white/95 text-slate-900 border border-white/40 focus:ring-white/80 placeholder:text-slate-400"
+                    : "bg-slate-50 text-slate-900 border border-slate-300 focus:ring-brand-500"
+                }`}
                 autoFocus
               />
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={onCancelEdit}
-                  className="text-xs text-slate-500 hover:text-slate-700 cursor-pointer"
+                  className={`text-xs cursor-pointer ${
+                    mine ? "text-white/80 hover:text-white" : "text-slate-500 hover:text-slate-700"
+                  }`}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={onSaveEdit}
-                  className="text-xs font-medium text-brand-600 hover:text-brand-700 cursor-pointer"
+                  className={`text-xs font-medium cursor-pointer ${
+                    mine ? "text-white hover:text-white/90" : "text-brand-600 hover:text-brand-700"
+                  }`}
                 >
                   Save
                 </button>

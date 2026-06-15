@@ -1,6 +1,7 @@
 "use client";
 
 import { isAudioMime, isImageMime, isVideoMime } from "@/lib/chat-attachment-utils";
+import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { splitMessageContent } from "@/lib/chat-format";
 import type { ChatMessage } from "@/lib/types";
 
@@ -11,6 +12,8 @@ export function ChatMessageContent({
   message: ChatMessage;
   mine: boolean;
 }) {
+  const attachments = message.attachments || [];
+
   return (
     <div className="space-y-2">
       {message.replyTo && (
@@ -20,9 +23,9 @@ export function ChatMessageContent({
           }`}
         >
           <div className="font-semibold opacity-80">{message.replyTo.senderName}</div>
-          <div className="opacity-70 truncate">
-            {message.replyTo.deleted ? "Message deleted" : message.replyTo.content || "Attachment"}
-          </div>
+          {message.replyTo.content ? (
+            <div className="opacity-70 truncate">{message.replyTo.content}</div>
+          ) : null}
         </div>
       )}
 
@@ -46,7 +49,7 @@ export function ChatMessageContent({
         </div>
       ) : null}
 
-      {message.attachments?.map((att) => (
+      {attachments.map((att) => (
         <AttachmentPreview key={att._id} attachment={att} mine={mine} />
       ))}
 
@@ -64,7 +67,8 @@ function AttachmentPreview({
   attachment: NonNullable<ChatMessage["attachments"]>[number];
   mine: boolean;
 }) {
-  const { fileUrl, fileName, mimeType } = attachment;
+  const fileUrl = resolveChatAttachmentUrl(attachment.fileUrl);
+  const { fileName, mimeType } = attachment;
 
   if (isImageMime(mimeType)) {
     return (
@@ -101,7 +105,10 @@ function AttachmentPreview({
         mine ? "border-white/30 bg-white/10" : "border-slate-200 bg-slate-50"
       }`}
     >
-      <span>📄</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+      </svg>
       <span className="truncate max-w-[180px]">{fileName}</span>
     </a>
   );

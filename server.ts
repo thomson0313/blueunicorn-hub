@@ -1,6 +1,8 @@
 import { loadEnvConfig } from "@next/env";
 import "./src/lib/als-polyfill";
 import { createServer } from "node:http";
+import fs from "node:fs";
+import path from "node:path";
 import { parse } from "node:url";
 import next from "next";
 import { Server as SocketIOServer, type Socket } from "socket.io";
@@ -69,6 +71,41 @@ function endScreenShareSession(io: SocketIOServer) {
   io.emit("screenshare:ended");
 }
 
+const UPLOAD_MIME: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".webm": "video/webm",
+  ".mp4": "video/mp4",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".pdf": "application/pdf",
+};
+
+function tryServeChatUpload(pathname: string, res: import("node:http").ServerResponse): boolean {
+  if (!pathname.startsWith("/uploads/chat/")) return false;
+  const filename = path.basename(pathname);
+  if (!filename) {
+    res.statusCode = 404;
+    res.end("Not found");
+    return true;
+  }
+  const filePath = path.join(process.cwd(), "public", "uploads", "chat", filename);
+  if (!fs.existsSync(filePath)) {
+    res.statusCode = 404;
+    res.end("Not found");
+    return true;
+  }
+  const ext = path.extname(filename).toLowerCase();
+  res.setHeader("Content-Type", UPLOAD_MIME[ext] || "application/octet-stream");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  fs.createReadStream(filePath).pipe(res);
+  return true;
+}
+
 app.prepare().then(async () => {
   await connectDB().catch((err) => {
     console.error("[server] Data store initialization failed:", err.message);
@@ -76,6 +113,7 @@ app.prepare().then(async () => {
 
   const httpServer = createServer((req, res) => {
     const parsedUrl = parse(req.url || "", true);
+    if (tryServeChatUpload(parsedUrl.pathname || "", res)) return;
     handle(req, res, parsedUrl);
   });
 
