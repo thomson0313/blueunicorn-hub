@@ -15,6 +15,7 @@ export function AnchoredPortal({
   className = "",
   zIndex = 100,
   width = 320,
+  gap = 6,
 }: {
   open: boolean;
   anchorRef: React.RefObject<HTMLElement | null>;
@@ -24,8 +25,14 @@ export function AnchoredPortal({
   className?: string;
   zIndex?: number;
   width?: number;
+  gap?: number;
 }) {
-  const [pos, setPos] = useState<{ left: number; top: number; width?: number } | null>(null);
+  const [pos, setPos] = useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+    width: number;
+  } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useLayoutEffect(() => {
@@ -43,14 +50,19 @@ export function AnchoredPortal({
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const menuW = Math.min(width, window.innerWidth - 16);
-      const menuH = 240;
-      const x = align === "right" ? rect.right - menuW : rect.left;
-      const y =
-        placement === "above"
-          ? rect.top - menuH - 8
-          : rect.bottom + 8;
-      const { left, top } = anchoredPosition(x, y, menuW, menuH);
-      setPos({ left, top, width: menuW });
+      const leftBase = align === "right" ? rect.right - menuW : rect.left;
+      const { left } = anchoredPosition(leftBase, rect.top, menuW, 0);
+
+      if (placement === "above") {
+        setPos({
+          left,
+          bottom: window.innerHeight - rect.top + gap,
+          width: menuW,
+        });
+      } else {
+        const { top } = anchoredPosition(leftBase, rect.bottom + gap, menuW, 0);
+        setPos({ left, top, width: menuW });
+      }
     }
 
     update();
@@ -60,7 +72,7 @@ export function AnchoredPortal({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open, anchorRef, placement, align, width]);
+  }, [open, anchorRef, placement, align, width, gap]);
 
   if (!open || !mounted || !pos) return null;
 
@@ -71,6 +83,7 @@ export function AnchoredPortal({
         position: "fixed",
         left: pos.left,
         top: pos.top,
+        bottom: pos.bottom,
         width: pos.width,
         zIndex,
       }}

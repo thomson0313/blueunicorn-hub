@@ -12,10 +12,6 @@ import { ChatAttachmentPreviewModal } from "@/components/chat/ChatAttachmentPrev
 import { AnchoredPortal } from "@/components/chat/AnchoredPortal";
 import { ChatEmojiAutocomplete, ChatEmojiPicker } from "@/components/chat/ChatEmojiPicker";
 import { ChatMentionAutocomplete } from "@/components/chat/ChatMentionAutocomplete";
-import {
-  ChatMentionTextarea,
-  type ChatMentionTextareaHandle,
-} from "@/components/chat/ChatMentionTextarea";
 import { isImageMime } from "@/lib/chat-attachment-utils";
 import type { AttachmentLike } from "@/lib/chat-attachment-actions";
 import { EMOJI_SHORTCODES } from "@/lib/chat-emoji";
@@ -78,10 +74,11 @@ export const ChatComposer = forwardRef<
   const [dragOver, setDragOver] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentLike | null>(null);
   const composerRootRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<ChatMentionTextareaHandle>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputAreaRef = useRef<HTMLDivElement>(null);
+  const inputRowRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const emojiRef = useRef<HTMLDivElement>(null);
+  const emojiRef = useRef<HTMLButtonElement>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [cursorPos, setCursorPos] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -102,7 +99,6 @@ export const ChatComposer = forwardRef<
     ? buildMentionOptions(mentionMembers, mentionCtx.query)
     : [];
   const mentionOpen = !!mentionCtx && mentionMembers.length > 0;
-  const enableMentions = mentionMembers.length > 0;
 
   const revokeAttachment = useCallback((att: DraftAttachment) => {
     URL.revokeObjectURL(att.previewUrl);
@@ -149,9 +145,7 @@ export const ChatComposer = forwardRef<
     const nextCursor = before.length + handle.length + 2;
     onDraftChange(next);
     setCursorPos(nextCursor);
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-    });
+    requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
   async function handleSend() {
@@ -286,14 +280,11 @@ export const ChatComposer = forwardRef<
   }
 
   useEffect(() => {
-    if (!emojiOpen) return;
-    function onDoc(e: MouseEvent) {
-      if (emojiRef.current?.contains(e.target as Node)) return;
-      setEmojiOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [emojiOpen]);
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+  }, [draft]);
 
   return (
     <div
@@ -406,7 +397,14 @@ export const ChatComposer = forwardRef<
         )}
 
         {mentionOpen && (
-          <AnchoredPortal open anchorRef={inputAreaRef} placement="above" zIndex={100}>
+          <AnchoredPortal
+            open
+            anchorRef={inputRowRef}
+            placement="above"
+            zIndex={100}
+            width={260}
+            gap={4}
+          >
             <ChatMentionAutocomplete
               options={mentionOptions}
               selectedIndex={mentionIndex}
@@ -417,6 +415,7 @@ export const ChatComposer = forwardRef<
         )}
 
         <div
+          ref={inputRowRef}
           className={`flex items-end gap-1 rounded-xl border px-2 py-1.5 min-w-0 ${
             recording ? "border-slate-200 bg-slate-50" : "border-slate-300"
           } ${sending ? "opacity-60" : ""}`}
@@ -444,45 +443,35 @@ export const ChatComposer = forwardRef<
             }}
           />
 
-          {enableMentions ? (
-            <ChatMentionTextarea
-              ref={textareaRef}
-              value={draft}
-              onChange={handleDraftChange}
-              onKeyDown={onKeyDown}
-              onPaste={handlePaste}
-              mentionMembers={mentionMembers}
-              placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
-              disabled={recording || sending}
-            />
-          ) : (
-            <textarea
-              value={draft}
-              onChange={(e) => handleDraftChange(e.target.value, e.target.selectionStart)}
-              onKeyDown={onKeyDown}
-              onPaste={handlePaste}
-              placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
-              disabled={recording || sending}
-              rows={1}
-              className="flex-1 min-w-0 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
-            />
-          )}
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => handleDraftChange(e.target.value, e.target.selectionStart)}
+            onKeyDown={onKeyDown}
+            onPaste={handlePaste}
+            onClick={(e) => handleDraftChange(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onKeyUp={(e) => handleDraftChange(e.currentTarget.value, e.currentTarget.selectionStart)}
+            placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
+            disabled={recording || sending}
+            rows={1}
+            className="flex-1 min-w-0 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
+          />
 
-          <div className="relative shrink-0" ref={emojiRef}>
-            <button
-              type="button"
-              disabled={recording || sending}
-              onClick={() => setEmojiOpen((o) => !o)}
-              className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
-              aria-label="Emoji"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                <circle cx="12" cy="12" r="10" />
-                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                <line x1="9" y1="9" x2="9.01" y2="9" />
-                <line x1="15" y1="9" x2="15.01" y2="9" />
-              </svg>
-            </button>
+          <button
+            ref={emojiRef}
+            type="button"
+            disabled={recording || sending}
+            onClick={() => setEmojiOpen((o) => !o)}
+            className="shrink-0 w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
+            aria-label="Emoji"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </button>
             {emojiOpen && !recording && !sending && (
               <ChatEmojiPicker
                 anchorRef={emojiRef}
@@ -490,7 +479,6 @@ export const ChatComposer = forwardRef<
                 onClose={() => setEmojiOpen(false)}
               />
             )}
-          </div>
 
           <button
             type="button"

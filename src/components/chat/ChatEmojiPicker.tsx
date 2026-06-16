@@ -83,7 +83,7 @@ export function ChatEmojiPicker({
   }
 
   return (
-    <AnchoredPortal open anchorRef={anchorRef} placement="above" align="right" zIndex={100} width={288}>
+    <AnchoredPortal open anchorRef={anchorRef} placement="above" align="right" zIndex={100} width={288} gap={4}>
       <div
         ref={ref}
         className="w-72 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-80"
@@ -102,6 +102,7 @@ export function ChatEmojiPicker({
             <button
               key={`recent-tab-${emoji}`}
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => pick(emoji)}
               className="w-8 h-8 shrink-0 rounded-md hover:bg-slate-100 text-lg cursor-pointer"
             >
@@ -130,6 +131,7 @@ export function ChatEmojiPicker({
             <button
               key={emoji}
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => pick(emoji)}
               className="w-8 h-8 rounded hover:bg-slate-100 text-lg cursor-pointer"
             >

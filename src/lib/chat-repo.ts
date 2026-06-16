@@ -279,20 +279,19 @@ export async function createChatChannel(
   dbError(error);
 
   const members = new Set([userId, ...memberIds]);
-  if (visibility === "private" || members.size > 1) {
-    const rows = [...members].map((uid) => ({
-      channel_id: id,
-      user_id: uid,
-      joined_at: ts,
-    }));
+  if (visibility === "public") {
+    const users = await listUsers();
+    for (const u of users) members.add(u._id);
+  }
+
+  const rows = [...members].map((uid) => ({
+    channel_id: id,
+    user_id: uid,
+    joined_at: ts,
+  }));
+  if (rows.length > 0) {
     const { error: memErr } = await sb.from("chat_channel_members").insert(rows);
     dbError(memErr);
-  } else {
-    await sb.from("chat_channel_members").insert({
-      channel_id: id,
-      user_id: userId,
-      joined_at: ts,
-    });
   }
 
   return toChannelRec(data as ChannelRow);
@@ -620,12 +619,24 @@ export type ChannelMemberInfo = {
 
 export async function listChannelMembers(channelId: string): Promise<ChannelMemberInfo[]> {
   const sb = getSupabase();
+  const channel = await getChannelById(channelId);
+  const users = await listUsers();
+
+  if (channel?.visibility === "public") {
+    void syncPublicChannelMembers(channelId).catch(() => {});
+    return users.map((u) => ({
+      userId: u._id,
+      name: u.name,
+      username: u.username ?? null,
+      avatarUrl: u.avatarUrl ?? null,
+    }));
+  }
+
   const { data, error } = await sb
     .from("chat_channel_members")
     .select("user_id")
     .eq("channel_id", channelId);
   dbError(error);
-  const users = await listUsers();
   return (data || []).map((row: { user_id: string }) => {
     const u = users.find((x) => x._id === row.user_id);
     return {
@@ -635,6 +646,44 @@ export async function listChannelMembers(channelId: string): Promise<ChannelMemb
       avatarUrl: u?.avatarUrl ?? null,
     };
   });
+}
+
+/** Ensure every hub user is a member of a public channel (background sync). */
+async function syncPublicChannelMembers(channelId: string): Promise<void> {
+  const users = await listUsers();
+  const ts = nowISO();
+  const rows = users.map((u) => ({
+    channel_id: channelId,
+    user_id: u._id,
+    joined_at: ts,
+  }));
+  if (!rows.length) return;
+  const { error } = await getSupabase()
+    .from("chat_channel_members")
+    .upsert(rows, { onConflict: "channel_id,user_id", ignoreDuplicates: true });
+  dbError(error);
+}
+
+/** Add a new hub member to every public channel. */
+export async function addUserToPublicChannels(userId: string): Promise<void> {
+  const sb = getSupabase();
+  const { data: channels, error: chErr } = await sb
+    .from("chat_channels")
+    .select("id")
+    .eq("visibility", "public");
+  dbError(chErr);
+  if (!channels?.length) return;
+
+  const ts = nowISO();
+  const rows = channels.map((c: { id: string }) => ({
+    channel_id: c.id,
+    user_id: userId,
+    joined_at: ts,
+  }));
+  const { error } = await sb
+    .from("chat_channel_members")
+    .upsert(rows, { onConflict: "channel_id,user_id", ignoreDuplicates: true });
+  dbError(error);
 }
 
 export async function updateChatChannel(

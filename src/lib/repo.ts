@@ -465,7 +465,14 @@ export async function createUser(data: {
   };
   const { data: created, error } = await getSupabase().from("users").insert(row).select().single();
   dbError(error);
-  return toUserRec(created as UserRow);
+  const user = toUserRec(created as UserRow);
+  try {
+    const { addUserToPublicChannels } = await import("./chat-repo");
+    await addUserToPublicChannels(user._id);
+  } catch {
+    /* non-fatal */
+  }
+  return user;
 }
 
 export async function isEmailOrUsernameTakenByOther(
