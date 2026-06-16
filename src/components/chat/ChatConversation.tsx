@@ -53,7 +53,7 @@ export function ChatConversation({
     channelMembers: { name: string; avatarUrl?: string | null }[];
   }) => void;
 }) {
-  const { user, socket, socketConnected, avatarUrl, onlineUserIds, setActiveConversation, clearUnread, chatDrafts, setChatDraft } = useApp();
+  const { user, socket, socketConnected, avatarUrl, onlineUserIds, setActiveConversation, setConversationViewed, chatDrafts, setChatDraft } = useApp();
   const realtimeMode = useRealtimeMode();
   const connected = realtimeMode === "polling" || socketConnected;
 
@@ -92,6 +92,15 @@ export function ChatConversation({
   const peerReadAtRef = useRef(peerReadAt);
   const channelMetaRef = useRef(channelMeta);
   const channelMembersRef = useRef(channelMembers);
+  const pendingBlobsRef = useRef<Map<string, DraftAttachment[]>>(new Map());
+
+  const releasePendingBlobs = useCallback((tempId: string) => {
+    const drafts = pendingBlobsRef.current.get(tempId);
+    if (!drafts) return;
+    for (const d of drafts) URL.revokeObjectURL(d.previewUrl);
+    pendingBlobsRef.current.delete(tempId);
+  }, []);
+
   const lastMarkedReadRef = useRef<string | null>(null);
   const parsed = parseChatTarget(target);
 
@@ -130,15 +139,22 @@ export function ChatConversation({
   );
 
   const tryMarkReadIfViewing = useCallback(() => {
-    if (document.visibilityState !== "visible" || !document.hasFocus()) return;
-    if (!atBottomRef.current) return;
+    if (document.visibilityState !== "visible" || !document.hasFocus()) {
+      setConversationViewed(null);
+      return;
+    }
+    if (!atBottomRef.current) {
+      setConversationViewed(null);
+      return;
+    }
     const list = messagesRef.current;
     if (!list.length) return;
     const latest = list[list.length - 1].createdAt;
     if (lastMarkedReadRef.current && latest <= lastMarkedReadRef.current) return;
     lastMarkedReadRef.current = latest;
     markRead(latest);
-  }, [markRead]);
+    setConversationViewed(target);
+  }, [markRead, setConversationViewed, target]);
 
   const loadHistory = useCallback(async () => {
     const cached = getConversationCache(target);
@@ -223,9 +239,12 @@ export function ChatConversation({
 
   useEffect(() => {
     setActiveConversation(target);
-    clearUnread(target);
-    return () => setActiveConversation(null);
-  }, [target, setActiveConversation, clearUnread]);
+    setConversationViewed(null);
+    return () => {
+      setActiveConversation(null);
+      setConversationViewed(null);
+    };
+  }, [target, setActiveConversation, setConversationViewed]);
 
   useEffect(() => {
     onHeaderStateChange?.({ typingLabel, channelMembers });
@@ -312,6 +331,8 @@ export function ChatConversation({
             (m) => m.pending && m.sender._id === user.sub && m._id.startsWith("temp-")
           );
           if (pendingIdx >= 0) {
+            const tempId = prev[pendingIdx]._id;
+            releasePendingBlobs(tempId);
             const next = [...prev];
             next[pendingIdx] = { ...msg, pending: false };
             return next;
@@ -411,6 +432,7 @@ export function ChatConversation({
     markRead,
     tryMarkReadIfViewing,
     onMessageDeleted,
+    releasePendingBlobs,
     onChannelDeleted,
   ]);
 
@@ -511,6 +533,7 @@ export function ChatConversation({
     };
 
     setMessages((prev) => [...prev, optimistic]);
+    pendingBlobsRef.current.set(tempId, payload.attachments);
     setReplyTo(null);
     setChatDraft(target, "");
     notifyTyping();
@@ -521,6 +544,7 @@ export function ChatConversation({
         payload.attachments.map((a) => uploadChatAttachmentFile(a.file))
       );
     } catch {
+      releasePendingBlobs(tempId);
       setMessages((prev) => prev.filter((m) => m._id !== tempId));
       throw new Error("Failed to upload attachment");
     }
@@ -558,9 +582,11 @@ export function ChatConversation({
     });
     const data = await res.json();
     if (!res.ok) {
+      releasePendingBlobs(tempId);
       setMessages((prev) => prev.filter((m) => m._id !== tempId));
       throw new Error(data.error || "Failed to send message");
     }
+    releasePendingBlobs(tempId);
     setMessages((prev) => prev.map((m) => (m._id === tempId ? data.message : m)));
     lastMessageAtRef.current = data.message.createdAt;
   }

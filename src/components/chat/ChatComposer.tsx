@@ -60,6 +60,7 @@ export const ChatComposer = forwardRef<
   const [recording, setRecording] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentLike | null>(null);
+  const composerRootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
@@ -92,6 +93,7 @@ export const ChatComposer = forwardRef<
       previewUrl: URL.createObjectURL(file),
     }));
     setAttachments((prev) => [...prev, ...added]);
+    requestAnimationFrame(() => composerRootRef.current?.focus());
   }, []);
 
   useImperativeHandle(ref, () => ({ addFiles }), [addFiles]);
@@ -113,18 +115,27 @@ export const ChatComposer = forwardRef<
     }
 
     const attachmentsSnapshot = [...attachments];
-    for (const att of attachmentsSnapshot) revokeAttachment(att);
     setAttachments([]);
     onDraftChange("");
 
     try {
       await onSend({ content, attachments: attachmentsSnapshot });
+      for (const att of attachmentsSnapshot) revokeAttachment(att);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } catch (err) {
+      setAttachments(attachmentsSnapshot);
       setSendError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setSending(false);
     }
+  }
+
+  function handleComposerKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== "Enter" || e.shiftKey || recording || sending || !canSend || !hasContent) return;
+    if (!composerRootRef.current?.contains(e.target as Node)) return;
+    if (e.target === textareaRef.current) return;
+    e.preventDefault();
+    void handleSend();
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -223,7 +234,10 @@ export const ChatComposer = forwardRef<
 
   return (
     <div
-      className={`border-t border-slate-200 bg-white shrink-0 min-w-0 overflow-x-hidden ${dragOver ? "ring-2 ring-brand-400 ring-inset" : ""}`}
+      ref={composerRootRef}
+      tabIndex={-1}
+      onKeyDownCapture={handleComposerKeyDown}
+      className={`border-t border-slate-200 bg-white shrink-0 min-w-0 overflow-x-hidden outline-none ${dragOver ? "ring-2 ring-brand-400 ring-inset" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
         if (!recording) setDragOver(true);

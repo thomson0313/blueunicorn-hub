@@ -29,6 +29,7 @@ type AppContextValue = {
   chatDrafts: Record<string, string>;
   setChatDraft: (target: string, text: string) => void;
   setActiveConversation: (id: string | null) => void;
+  setConversationViewed: (id: string | null) => void;
   clearUnread: (id: string) => void;
   hubUnreadCount: number;
   refreshHubNotifications: () => Promise<void>;
@@ -87,6 +88,7 @@ export function AppProvider({
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
   const activeConvRef = useRef<string | null>(null);
+  const viewingConvRef = useRef<string | null>(null);
   const alertsSinceRef = useRef(new Date().toISOString());
   const hubSinceRef = useRef(new Date().toISOString());
   const [hubUnreadCount, setHubUnreadCount] = useState(0);
@@ -133,7 +135,7 @@ export function AppProvider({
 
   const bumpUnread = useCallback((convId: string, fromSelf: boolean) => {
     if (fromSelf) return;
-    if (activeConvRef.current === convId) return;
+    if (viewingConvRef.current === convId) return;
     setUnread((prev) => ({ ...prev, [convId]: (prev[convId] || 0) + 1 }));
     playMessageChime();
   }, []);
@@ -329,6 +331,11 @@ export function AppProvider({
 
   const setActiveConversation = useCallback((id: string | null) => {
     activeConvRef.current = id;
+    if (!id) viewingConvRef.current = null;
+  }, []);
+
+  const setConversationViewed = useCallback((id: string | null) => {
+    viewingConvRef.current = id;
     if (id) setUnread((prev) => (prev[id] ? { ...prev, [id]: 0 } : prev));
   }, []);
 
@@ -385,6 +392,7 @@ export function AppProvider({
       chatDrafts,
       setChatDraft,
       setActiveConversation,
+      setConversationViewed,
       clearUnread,
       hubUnreadCount,
       refreshHubNotifications,
@@ -404,6 +412,7 @@ export function AppProvider({
       chatDrafts,
       setChatDraft,
       setActiveConversation,
+      setConversationViewed,
       clearUnread,
       hubUnreadCount,
       refreshHubNotifications,

@@ -19,9 +19,11 @@ import type { ChatMessage } from "@/lib/types";
 export function ChatMessageContent({
   message,
   mine,
+  pending = false,
 }: {
   message: ChatMessage;
   mine: boolean;
+  pending?: boolean;
 }) {
   const attachments = message.attachments || [];
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentLike | null>(null);
@@ -83,6 +85,7 @@ export function ChatMessageContent({
           key={att._id}
           attachment={att}
           mine={mine}
+          pending={pending}
           onClick={() => handleAttachmentClick(att)}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -130,17 +133,59 @@ export function ChatMessageContent({
 function AttachmentPreview({
   attachment,
   mine,
+  pending = false,
   onClick,
   onContextMenu,
 }: {
   attachment: NonNullable<ChatMessage["attachments"]>[number];
   mine: boolean;
+  pending?: boolean;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
   const fileUrl = resolveChatAttachmentUrl(attachment.fileUrl);
   const { fileName, mimeType } = attachment;
   const previewable = isPreviewableMime(mimeType);
+
+  if (pending && isImageMime(mimeType)) {
+    return (
+      <div className="max-w-[140px]">
+        <button
+          type="button"
+          onClick={onClick}
+          onContextMenu={onContextMenu}
+          className="block cursor-pointer rounded-lg overflow-hidden focus:outline-none"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={fileUrl}
+            alt={fileName}
+            className="max-w-full max-h-48 rounded-lg object-contain border border-white/20"
+          />
+        </button>
+        <p className={`text-[10px] truncate mt-1 ${mine ? "text-white/80" : "text-slate-500"}`}>
+          {fileName}
+        </p>
+      </div>
+    );
+  }
+
+  if (pending && !isImageMime(mimeType)) {
+    return (
+      <div
+        className={`inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg border max-w-full ${
+          mine ? "border-white/30 bg-white/10 text-white" : "border-slate-200 bg-slate-50 text-slate-700"
+        }`}
+        onContextMenu={onContextMenu}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden className="shrink-0">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+        <span className="truncate max-w-[180px]">{fileName}</span>
+      </div>
+    );
+  }
 
   if (isImageMime(mimeType)) {
     return (

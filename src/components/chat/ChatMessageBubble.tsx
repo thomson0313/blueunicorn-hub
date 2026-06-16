@@ -158,7 +158,7 @@ export function ChatMessageBubble({
             </div>
           ) : (
             <>
-              <ChatMessageContent message={message} mine={mine} />
+              <ChatMessageContent message={message} mine={mine} pending={message.pending} />
               <div
                 className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
                   mine ? "text-brand-100" : "text-slate-400"
