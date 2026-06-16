@@ -46,9 +46,9 @@ const REALTIME_MODE: RealtimeMode =
   process.env.NEXT_PUBLIC_REALTIME_MODE === "polling" ? "polling" : "socket";
 
 const ALERT_POLL_MS = 15_000;
-const ALERT_POLL_SOCKET_MS = 60_000;
+const SESSION_VERIFY_MS = 120_000;
 const HUB_NOTIF_POLL_MS = 5_000;
-const HUB_NOTIF_SOCKET_FALLBACK_MS = 120_000;
+const HUB_NOTIF_SOCKET_FALLBACK_MS = 300_000;
 
 export function AppProvider({
   user,
@@ -119,10 +119,15 @@ export function AppProvider({
     };
 
     verifySession();
-    const timer = setInterval(verifySession, 30_000);
+    const timer = setInterval(verifySession, SESSION_VERIFY_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void verifySession();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
@@ -141,9 +146,11 @@ export function AppProvider({
     });
   }, []);
 
-  // Deliver due scheduled alerts and show new ones (no cron — runs while the app is open).
+  // Scheduled alerts — socket server delivers due alerts; HTTP poll only on serverless.
   useEffect(() => {
     if (!emailVerified) return;
+    if (REALTIME_MODE === "socket") return;
+
     let cancelled = false;
 
     const pollAlerts = async () => {
@@ -163,10 +170,7 @@ export function AppProvider({
     };
 
     pollAlerts();
-    const timer = setInterval(
-      pollAlerts,
-      REALTIME_MODE === "socket" ? ALERT_POLL_SOCKET_MS : ALERT_POLL_MS
-    );
+    const timer = setInterval(pollAlerts, ALERT_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);

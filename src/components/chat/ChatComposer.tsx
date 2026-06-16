@@ -1,46 +1,60 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { ChatAttachmentPreviewModal } from "@/components/chat/ChatAttachmentPreviewModal";
 import { ChatEmojiAutocomplete, ChatEmojiPicker } from "@/components/chat/ChatEmojiPicker";
 import { isImageMime } from "@/lib/chat-attachment-utils";
-import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
-import { EMOJI_SHORTCODES } from "@/lib/chat-emoji";
 import type { AttachmentLike } from "@/lib/chat-attachment-actions";
+import { EMOJI_SHORTCODES } from "@/lib/chat-emoji";
 
-export type OutgoingAttachment = {
+/** Local draft attachment — uploaded only when the message is sent. */
+export type DraftAttachment = {
+  id: string;
+  file: File;
   fileName: string;
-  fileUrl: string;
   mimeType: string;
   fileSize: number;
+  previewUrl: string;
 };
 
 export type ChatComposerHandle = {
-  uploadFiles: (files: FileList | File[]) => Promise<void>;
+  addFiles: (files: FileList | File[]) => void;
 };
 
-export const ChatComposer = forwardRef<ChatComposerHandle, {
-  placeholder: string;
-  canSend?: boolean;
-  draft: string;
-  onDraftChange: (text: string) => void;
-  replyTo?: { senderName: string; content: string } | null;
-  onCancelReply?: () => void;
-  onSend: (payload: { content: string; attachments: OutgoingAttachment[] }) => Promise<void>;
-  onActivity?: () => void;
-}>(function ChatComposer({
-  placeholder,
-  canSend = true,
-  draft,
-  onDraftChange,
-  replyTo,
-  onCancelReply,
-  onSend,
-  onActivity,
-}, ref) {
-  const [attachments, setAttachments] = useState<OutgoingAttachment[]>([]);
-  const [uploadingCount, setUploadingCount] = useState(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+export const ChatComposer = forwardRef<
+  ChatComposerHandle,
+  {
+    placeholder: string;
+    canSend?: boolean;
+    draft: string;
+    onDraftChange: (text: string) => void;
+    replyTo?: { senderName: string; content: string } | null;
+    onCancelReply?: () => void;
+    onSend: (payload: { content: string; attachments: DraftAttachment[] }) => Promise<void>;
+    onActivity?: () => void;
+  }
+>(function ChatComposer(
+  {
+    placeholder,
+    canSend = true,
+    draft,
+    onDraftChange,
+    replyTo,
+    onCancelReply,
+    onSend,
+    onActivity,
+  },
+  ref
+) {
+  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -53,52 +67,57 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
   const chunksRef = useRef<Blob[]>([]);
   const cancelRecordingRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
+  const attachmentsRef = useRef(attachments);
 
-  const uploading = uploadingCount > 0;
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
   const hasContent = draft.trim().length > 0 || attachments.length > 0;
   const colonMatch = draft.match(/:([a-z0-9_+-]{1,})$/i);
   const colonQuery = colonMatch?.[1] || "";
 
-  const uploadFiles = useCallback(async (files: FileList | File[]) => {
-    setUploadError(null);
-    for (const file of Array.from(files)) {
-      setUploadingCount((c) => c + 1);
-      try {
-        const fd = new FormData();
-        fd.append("file", file);
-        const res = await fetch("/api/chat/attachments", { method: "POST", body: fd });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Upload failed");
-        setAttachments((prev) => [
-          ...prev,
-          {
-            fileName: data.attachment.fileName,
-            fileUrl: resolveChatAttachmentUrl(data.attachment.url),
-            mimeType: data.attachment.mimeType,
-            fileSize: data.attachment.fileSize,
-          },
-        ]);
-      } catch (err) {
-        setUploadError(err instanceof Error ? err.message : "Upload failed");
-      } finally {
-        setUploadingCount((c) => Math.max(0, c - 1));
-      }
-    }
+  const revokeAttachment = useCallback((att: DraftAttachment) => {
+    URL.revokeObjectURL(att.previewUrl);
   }, []);
 
-  useImperativeHandle(ref, () => ({ uploadFiles }), [uploadFiles]);
+  const addFiles = useCallback((files: FileList | File[]) => {
+    setSendError(null);
+    const added: DraftAttachment[] = Array.from(files).map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      fileSize: file.size,
+      previewUrl: URL.createObjectURL(file),
+    }));
+    setAttachments((prev) => [...prev, ...added]);
+  }, []);
+
+  useImperativeHandle(ref, () => ({ addFiles }), [addFiles]);
+
+  useEffect(() => {
+    return () => {
+      for (const att of attachmentsRef.current) revokeAttachment(att);
+    };
+  }, [revokeAttachment]);
 
   async function handleSend() {
     if (!hasContent || sending || recording || !canSend) return;
     setSending(true);
+    setSendError(null);
+    const toSend = attachments;
     try {
       let content = draft.trim();
       for (const [code, emoji] of Object.entries(EMOJI_SHORTCODES)) {
         content = content.replaceAll(`:${code}:`, emoji);
       }
-      await onSend({ content, attachments });
+      await onSend({ content, attachments: toSend });
+      for (const att of toSend) revokeAttachment(att);
       setAttachments([]);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setSending(false);
     }
@@ -123,7 +142,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
     }
     if (files.length) {
       e.preventDefault();
-      void uploadFiles(files);
+      addFiles(files);
     }
   }
 
@@ -137,6 +156,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
     recorderRef.current?.stop();
     stopStream();
     setRecording(false);
+  }
+
+  function addVoiceDraft(file: File) {
+    addFiles([file]);
   }
 
   async function toggleVoice() {
@@ -158,7 +181,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
       rec.ondataavailable = (ev) => {
         if (ev.data.size) chunksRef.current.push(ev.data);
       };
-      rec.onstop = async () => {
+      rec.onstop = () => {
         stopStream();
         setRecording(false);
         if (cancelRecordingRef.current) {
@@ -168,12 +191,12 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
         }
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
-        await uploadFiles([file]);
+        addVoiceDraft(file);
       };
       rec.start();
       setRecording(true);
     } catch {
-      setUploadError("Microphone access denied");
+      setSendError("Microphone access denied");
     }
   }
 
@@ -205,7 +228,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
       onDrop={(e) => {
         e.preventDefault();
         setDragOver(false);
-        if (!recording && e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
+        if (!recording && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
       }}
     >
       {replyTo && (
@@ -224,17 +247,23 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
 
       {attachments.length > 0 && (
         <div className="px-3 pt-2 flex flex-wrap gap-2 min-w-0">
-          {attachments.map((a, i) => (
-            <div key={`${a.fileUrl}-${i}`} className="relative group max-w-[140px]">
+          {attachments.map((a) => (
+            <div key={a.id} className="relative group max-w-[140px]">
               {isImageMime(a.mimeType) ? (
                 <button
                   type="button"
-                  onClick={() => setPreviewAttachment(a)}
+                  onClick={() =>
+                    setPreviewAttachment({
+                      fileName: a.fileName,
+                      fileUrl: a.previewUrl,
+                      mimeType: a.mimeType,
+                    })
+                  }
                   className="block cursor-pointer"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={resolveChatAttachmentUrl(a.fileUrl)}
+                    src={a.previewUrl}
                     alt={a.fileName}
                     className="h-16 w-full rounded-lg object-cover border border-slate-200"
                   />
@@ -252,7 +281,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
               </p>
               <button
                 type="button"
-                onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                onClick={() => {
+                  revokeAttachment(a);
+                  setAttachments((prev) => prev.filter((x) => x.id !== a.id));
+                }}
                 className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-slate-800 text-white text-xs flex items-center justify-center cursor-pointer shadow-md hover:bg-slate-900 z-10"
                 aria-label="Remove attachment"
               >
@@ -263,28 +295,22 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
         </div>
       )}
 
-      {(uploading || recording) && (
+      {recording && (
         <div className="px-3 pt-2 flex items-center gap-2 text-xs text-brand-600">
           <div className="w-3.5 h-3.5 rounded-full border-2 border-brand-200 border-t-brand-500 animate-spin shrink-0" />
-          <span className="flex-1 min-w-0">
-            {recording ? "Recording voice message…" : "Uploading…"}
-          </span>
-          {recording && (
-            <button
-              type="button"
-              onClick={cancelRecording}
-              className="shrink-0 w-6 h-6 rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 flex items-center justify-center cursor-pointer"
-              aria-label="Cancel recording"
-            >
-              ×
-            </button>
-          )}
+          <span className="flex-1 min-w-0">Recording voice message…</span>
+          <button
+            type="button"
+            onClick={cancelRecording}
+            className="shrink-0 w-6 h-6 rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 flex items-center justify-center cursor-pointer"
+            aria-label="Cancel recording"
+          >
+            ×
+          </button>
         </div>
       )}
 
-      {uploadError && (
-        <p className="px-3 pt-2 text-xs text-red-600">{uploadError}</p>
-      )}
+      {sendError && <p className="px-3 pt-2 text-xs text-red-600">{sendError}</p>}
 
       <div className="relative p-2 min-w-0">
         {colonQuery && !recording && (
@@ -298,12 +324,14 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
           />
         )}
 
-        <div className={`flex items-end gap-1 rounded-xl border px-2 py-1.5 min-w-0 ${
-          recording ? "border-slate-200 bg-slate-50" : "border-slate-300"
-        } ${sending ? "opacity-60" : ""}`}>
+        <div
+          className={`flex items-end gap-1 rounded-xl border px-2 py-1.5 min-w-0 ${
+            recording ? "border-slate-200 bg-slate-50" : "border-slate-300"
+          } ${sending ? "opacity-60" : ""}`}
+        >
           <button
             type="button"
-            disabled={recording}
+            disabled={recording || sending}
             onClick={() => fileRef.current?.click()}
             className="shrink-0 w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
             aria-label="Attach file"
@@ -319,7 +347,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
             accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip"
             className="hidden"
             onChange={(e) => {
-              if (e.target.files?.length) void uploadFiles(e.target.files);
+              if (e.target.files?.length) addFiles(e.target.files);
               e.target.value = "";
             }}
           />
@@ -333,8 +361,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
             }}
             onKeyDown={onKeyDown}
             onPaste={handlePaste}
-            placeholder={recording ? "Recording…" : placeholder}
-            disabled={recording}
+            placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
+            disabled={recording || sending}
             rows={1}
             className="flex-1 min-w-0 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
           />
@@ -342,7 +370,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
           <div className="relative shrink-0" ref={emojiRef}>
             <button
               type="button"
-              disabled={recording}
+              disabled={recording || sending}
               onClick={() => setEmojiOpen((o) => !o)}
               className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
               aria-label="Emoji"
@@ -354,7 +382,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
                 <line x1="15" y1="9" x2="15.01" y2="9" />
               </svg>
             </button>
-            {emojiOpen && !recording && (
+            {emojiOpen && !recording && !sending && (
               <ChatEmojiPicker
                 onPick={(emoji) => onDraftChange(draft + emoji)}
                 onClose={() => setEmojiOpen(false)}
@@ -365,11 +393,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, {
           <button
             type="button"
             disabled={
-              recording
-                ? false
-                : hasContent
-                  ? !canSend || sending
-                  : sending
+              recording ? false : hasContent ? !canSend || sending : sending
             }
             onClick={() => void toggleVoice()}
             className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 ${

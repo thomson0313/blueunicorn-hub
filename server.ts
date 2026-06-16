@@ -8,6 +8,7 @@ import next from "next";
 import { Server as SocketIOServer, type Socket } from "socket.io";
 import { parse as parseCookie } from "cookie";
 import { connectDB } from "./src/lib/db";
+import { deliverDueAlerts } from "./src/lib/repo";
 import { verifySession, COOKIE_NAME, type SessionPayload } from "./src/lib/auth";
 import {
   handleChannelSend,
@@ -346,6 +347,23 @@ app.prepare().then(async () => {
 
   // Make io reachable from Next route handlers (same process) for instant pushes.
   (globalThis as unknown as { _io?: SocketIOServer })._io = io;
+
+  const ALERT_DELIVER_MS = 60_000;
+  setInterval(async () => {
+    try {
+      const delivered = await deliverDueAlerts();
+      for (const a of delivered) {
+        io.emit("alert:new", {
+          _id: a._id,
+          title: a.title,
+          content: a.content,
+          scheduledAt: a.scheduledAt,
+        });
+      }
+    } catch (err) {
+      console.error("[server] deliverDueAlerts failed:", err);
+    }
+  }, ALERT_DELIVER_MS);
 
   httpServer.listen(port, "0.0.0.0", () => {
     console.log(`> Ready on http://${hostname}:${port}`);

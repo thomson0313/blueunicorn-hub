@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { Avatar } from "@/components/Avatar";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { DeliveryStatusIcon } from "@/components/chat/DeliveryStatusIcon";
@@ -41,6 +41,8 @@ export function ChatMessageBubble({
   currentUserId: string;
 }) {
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const bubbleWidthRef = useRef(0);
   const attachments = message.attachments || [];
 
   const groupedReactions = useMemo(() => {
@@ -54,6 +56,12 @@ export function ChatMessageBubble({
     return map;
   }, [message.reactions, currentUserId]);
 
+  useLayoutEffect(() => {
+    if (!editing && bubbleRef.current) {
+      bubbleWidthRef.current = bubbleRef.current.offsetWidth;
+    }
+  });
+
   useEffect(() => {
     if (!editing) return;
     const ta = editRef.current;
@@ -61,6 +69,11 @@ export function ChatMessageBubble({
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 480)}px`;
   }, [editDraft, editing]);
+
+  const bubbleStyle =
+    editing && bubbleWidthRef.current > 0
+      ? { minWidth: bubbleWidthRef.current }
+      : undefined;
 
   return (
     <div
@@ -75,13 +88,15 @@ export function ChatMessageBubble({
         <Avatar name={message.sender.name} src={avatarUrl} size={32} />
       </span>
 
-      <div className={`min-w-0 max-w-[78%] w-full ${mine ? "items-end" : "items-start"} flex flex-col`}>
+      <div className={`min-w-0 w-fit max-w-[78%] flex flex-col ${mine ? "items-end" : "items-start"}`}>
         {showSender && !mine && (
           <div className="text-xs font-semibold mb-0.5 text-brand-600 px-1">{message.sender.name}</div>
         )}
 
         <div
-          className={`rounded-2xl px-3.5 py-2 shadow-sm min-w-0 max-w-full overflow-hidden ${
+          ref={bubbleRef}
+          style={bubbleStyle}
+          className={`rounded-2xl px-3.5 py-2 shadow-sm min-w-0 max-w-full ${
             mine ? "bg-brand-500 text-white rounded-br-md" : "bg-white text-slate-800 rounded-bl-md"
           }`}
         >
@@ -92,7 +107,7 @@ export function ChatMessageBubble({
                 value={editDraft ?? ""}
                 onChange={(e) => onEditDraftChange?.(e.target.value)}
                 rows={1}
-                className={`w-full min-w-0 max-w-full text-sm leading-relaxed whitespace-pre-wrap resize-none focus:outline-none bg-transparent overflow-hidden ${
+                className={`block w-full min-w-0 text-sm leading-relaxed whitespace-pre-wrap resize-none focus:outline-none bg-transparent overflow-hidden ${
                   mine
                     ? "text-white placeholder:text-white/50 caret-white"
                     : "text-slate-800 placeholder:text-slate-400"

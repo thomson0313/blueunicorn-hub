@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp, useRealtimeMode } from "@/components/AppProvider";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ChatComposer, type ChatComposerHandle, type OutgoingAttachment } from "@/components/chat/ChatComposer";
+import { ChatComposer, type ChatComposerHandle, type DraftAttachment } from "@/components/chat/ChatComposer";
+import { uploadChatAttachmentFile } from "@/lib/chat-attachment-upload";
 import { ChatConversationHeader } from "@/components/chat/ChatConversationHeader";
 import { ChannelCreatedBanner, type ChannelMeta } from "@/components/chat/ChannelCreatedBanner";
 import { ChatMessageBubble } from "@/components/chat/ChatMessageBubble";
@@ -292,13 +293,15 @@ export function ChatConversation({
         return;
       }
       setMessages((prev) => {
-        const pendingIdx = prev.findIndex(
-          (m) => m.pending && m.sender._id === user.sub && m.content === msg.content
-        );
-        if (pendingIdx >= 0) {
-          const next = [...prev];
-          next[pendingIdx] = { ...msg, pending: false };
-          return next;
+        if (msg.sender._id === user.sub) {
+          const pendingIdx = prev.findIndex(
+            (m) => m.pending && m.sender._id === user.sub && m._id.startsWith("temp-")
+          );
+          if (pendingIdx >= 0) {
+            const next = [...prev];
+            next[pendingIdx] = { ...msg, pending: false };
+            return next;
+          }
         }
         const idx = prev.findIndex((m) => m._id === msg._id);
         if (idx >= 0) {
@@ -449,7 +452,7 @@ export function ChatConversation({
     }, 2000);
   }
 
-  async function sendMessage(payload: { content: string; attachments: OutgoingAttachment[] }) {
+  async function sendMessage(payload: { content: string; attachments: DraftAttachment[] }) {
     if (realtimeMode === "socket" && !socketConnected) return;
     const parentId = replyTo?._id;
     const tempId = `temp-${Date.now()}`;
@@ -461,9 +464,12 @@ export function ChatConversation({
       parentId,
       content: payload.content,
       createdAt: new Date().toISOString(),
-      attachments: payload.attachments.map((a, i) => ({
-        _id: `temp-att-${i}`,
-        ...a,
+      attachments: payload.attachments.map((a) => ({
+        _id: `temp-att-${a.id}`,
+        fileName: a.fileName,
+        fileUrl: a.previewUrl,
+        mimeType: a.mimeType,
+        fileSize: a.fileSize,
       })),
       pending: true,
       replyTo: replyTo
@@ -481,10 +487,20 @@ export function ChatConversation({
     setChatDraft(target, "");
     notifyTyping();
 
+    let uploaded;
+    try {
+      uploaded = await Promise.all(
+        payload.attachments.map((a) => uploadChatAttachmentFile(a.file))
+      );
+    } catch {
+      setMessages((prev) => prev.filter((m) => m._id !== tempId));
+      throw new Error("Failed to upload attachment");
+    }
+
     const body: Record<string, unknown> = {
       content: payload.content,
       parentId,
-      attachments: payload.attachments,
+      attachments: uploaded,
     };
 
     if (realtimeMode === "socket" && socket) {
@@ -515,7 +531,7 @@ export function ChatConversation({
     const data = await res.json();
     if (!res.ok) {
       setMessages((prev) => prev.filter((m) => m._id !== tempId));
-      return;
+      throw new Error(data.error || "Failed to send message");
     }
     setMessages((prev) => prev.map((m) => (m._id === tempId ? data.message : m)));
     lastMessageAtRef.current = data.message.createdAt;
@@ -652,7 +668,7 @@ export function ChatConversation({
           e.preventDefault();
           setPanelDragOver(false);
           if (e.dataTransfer.files.length) {
-            void composerRef.current?.uploadFiles(e.dataTransfer.files);
+            composerRef.current?.addFiles(e.dataTransfer.files);
           }
         }}
       >
