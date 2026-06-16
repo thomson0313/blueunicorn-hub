@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Avatar } from "@/components/Avatar";
 import {
   MENTION_EVERYONE,
@@ -18,6 +19,13 @@ export function ChatMentionAutocomplete({
   onSelect: (option: MentionOption) => void;
   onHighlight: (index: number) => void;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-idx="${selectedIndex}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
+
   if (!options.length) {
     return (
       <div className="bg-white border border-slate-200 rounded-lg shadow-lg py-2 px-3 text-[11px] text-slate-500">
@@ -28,6 +36,7 @@ export function ChatMentionAutocomplete({
 
   return (
     <div
+      ref={listRef}
       className="bg-white border border-slate-200 rounded-lg shadow-lg py-0.5 max-h-36 overflow-y-auto"
       role="listbox"
     >
@@ -38,6 +47,7 @@ export function ChatMentionAutocomplete({
           <button
             key={option.kind === "everyone" ? "everyone" : option.member.userId}
             type="button"
+            data-idx={idx}
             role="option"
             aria-selected={active}
             onMouseEnter={() => onHighlight(idx)}

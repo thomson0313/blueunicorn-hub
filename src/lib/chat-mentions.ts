@@ -1,5 +1,10 @@
 export const MENTION_EVERYONE = "Everyone";
 
+/** Shared @mention chip styles (input + received messages). */
+export const MENTION_HIGHLIGHT_CLASS = "rounded-sm bg-sky-100 text-sky-700";
+/** @mention chip on the sender's colored bubble. */
+export const MENTION_HIGHLIGHT_MINE_CLASS = "rounded-sm bg-sky-200/80 text-white";
+
 export type MentionMember = {
   userId: string;
   name: string;

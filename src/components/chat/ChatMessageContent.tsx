@@ -13,7 +13,7 @@ import {
 } from "@/lib/chat-attachment-utils";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { splitMessageContent } from "@/lib/chat-format";
-import { splitDisplayMentions } from "@/lib/chat-mentions";
+import { MENTION_HIGHLIGHT_CLASS, MENTION_HIGHLIGHT_MINE_CLASS, splitDisplayMentions } from "@/lib/chat-mentions";
 import { closeAllChatContextMenus } from "@/lib/chat-context-menu";
 import type { ChatMessage } from "@/lib/types";
 
@@ -80,9 +80,7 @@ export function ChatMessageContent({
                   part.type === "mention" ? (
                     <span
                       key={j}
-                      className={`rounded px-0.5 ${
-                        mine ? "bg-white/20 text-white" : "bg-sky-100 text-sky-700"
-                      }`}
+                      className={mine ? MENTION_HIGHLIGHT_MINE_CLASS : MENTION_HIGHLIGHT_CLASS}
                     >
                       {part.value}
                     </span>

@@ -12,6 +12,7 @@ import { ChatAttachmentPreviewModal } from "@/components/chat/ChatAttachmentPrev
 import { AnchoredPortal } from "@/components/chat/AnchoredPortal";
 import { ChatEmojiAutocomplete, ChatEmojiPicker } from "@/components/chat/ChatEmojiPicker";
 import { ChatMentionAutocomplete } from "@/components/chat/ChatMentionAutocomplete";
+import { ChatMentionInput } from "@/components/chat/ChatMentionInput";
 import { isImageMime } from "@/lib/chat-attachment-utils";
 import type { AttachmentLike } from "@/lib/chat-attachment-actions";
 import { EMOJI_SHORTCODES } from "@/lib/chat-emoji";
@@ -99,6 +100,7 @@ export const ChatComposer = forwardRef<
     ? buildMentionOptions(mentionMembers, mentionCtx.query)
     : [];
   const mentionOpen = !!mentionCtx && mentionMembers.length > 0;
+  const useMentionInput = mentionMembers.length > 0;
 
   const revokeAttachment = useCallback((att: DraftAttachment) => {
     URL.revokeObjectURL(att.previewUrl);
@@ -280,11 +282,13 @@ export const ChatComposer = forwardRef<
   }
 
   useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-  }, [draft]);
+    if (!useMentionInput) {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.style.height = "auto";
+      ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+    }
+  }, [draft, useMentionInput]);
 
   return (
     <div
@@ -443,19 +447,32 @@ export const ChatComposer = forwardRef<
             }}
           />
 
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => handleDraftChange(e.target.value, e.target.selectionStart)}
-            onKeyDown={onKeyDown}
-            onPaste={handlePaste}
-            onClick={(e) => handleDraftChange(e.currentTarget.value, e.currentTarget.selectionStart)}
-            onKeyUp={(e) => handleDraftChange(e.currentTarget.value, e.currentTarget.selectionStart)}
-            placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
-            disabled={recording || sending}
-            rows={1}
-            className="flex-1 min-w-0 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
-          />
+          {useMentionInput ? (
+            <ChatMentionInput
+              ref={textareaRef}
+              value={draft}
+              onChange={handleDraftChange}
+              onKeyDown={onKeyDown}
+              onPaste={handlePaste}
+              mentionMembers={mentionMembers}
+              placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
+              disabled={recording || sending}
+            />
+          ) : (
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(e) => handleDraftChange(e.target.value, e.target.selectionStart)}
+              onKeyDown={onKeyDown}
+              onPaste={handlePaste}
+              onClick={(e) => handleDraftChange(e.currentTarget.value, e.currentTarget.selectionStart)}
+              onKeyUp={(e) => handleDraftChange(e.currentTarget.value, e.currentTarget.selectionStart)}
+              placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
+              disabled={recording || sending}
+              rows={1}
+              className="flex-1 min-w-0 resize-none bg-transparent text-sm py-1.5 px-1 leading-5 focus:outline-none disabled:opacity-50 max-h-[120px]"
+            />
+          )}
 
           <button
             ref={emojiRef}
