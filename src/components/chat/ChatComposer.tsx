@@ -246,7 +246,7 @@ export function ChatComposer({
         <div className={`flex items-end gap-1 rounded-xl border px-2 py-1.5 ${
           inputBusy || recording
             ? "border-slate-200 bg-slate-50"
-            : "border-slate-300 focus-within:ring-2 focus-within:ring-brand-500"
+            : "border-slate-300"
         } ${inputBusy && !recording ? "opacity-60" : ""}`}>
           <button
             type="button"

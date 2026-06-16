@@ -87,7 +87,7 @@ export function ChatEmojiPicker({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search emojis"
-          className="w-full text-sm px-2 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full text-sm px-2 py-1.5 rounded-lg border border-slate-200 focus:outline-none"
         />
       </div>
       {!searching && (

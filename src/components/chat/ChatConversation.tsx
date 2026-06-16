@@ -5,9 +5,11 @@ import { useApp, useRealtimeMode } from "@/components/AppProvider";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ChatComposer, type OutgoingAttachment } from "@/components/chat/ChatComposer";
 import { ChatConversationHeader } from "@/components/chat/ChatConversationHeader";
+import { ChannelCreatedBanner, type ChannelMeta } from "@/components/chat/ChannelCreatedBanner";
 import { ChatMessageBubble } from "@/components/chat/ChatMessageBubble";
 import { ChatMessageContextMenu } from "@/components/chat/ChatMessageContextMenu";
 import { dmConversationKey, parseChatTarget, targetLabel } from "@/lib/chat-target";
+import { formatTypingLabel } from "@/lib/chat-typing";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { downloadChatAttachment } from "@/lib/chat-attachment-actions";
 import type { ChatChannel, ChatMessage, PublicUser } from "@/lib/types";
@@ -22,16 +24,25 @@ export function ChatConversation({
   searchOpen: searchOpenProp,
   onSearchOpenChange,
   onMessageDeleted,
+  onChannelUpdated,
+  onChannelDeleted,
+  onHeaderStateChange,
 }: {
   target: string;
   users: PublicUser[];
   channels?: ChatChannel[];
   showHeader?: boolean;
   className?: string;
-  onTypingChange?: (name: string | null) => void;
+  onTypingChange?: (label: string | null) => void;
   searchOpen?: boolean;
   onSearchOpenChange?: (open: boolean) => void;
   onMessageDeleted?: () => void;
+  onChannelUpdated?: () => void;
+  onChannelDeleted?: () => void;
+  onHeaderStateChange?: (state: {
+    typingLabel: string | null;
+    channelMembers: { name: string; avatarUrl?: string | null }[];
+  }) => void;
 }) {
   const { user, socket, socketConnected, avatarUrl, onlineUserIds, setActiveConversation, clearUnread } = useApp();
   const realtimeMode = useRealtimeMode();
@@ -44,8 +55,13 @@ export function ChatConversation({
   const [editDraft, setEditDraft] = useState("");
   const [searchOpenLocal, setSearchOpenLocal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [typingName, setTypingName] = useState<string | null>(null);
+  const [typingLabel, setTypingLabel] = useState<string | null>(null);
   const [peerReadAt, setPeerReadAt] = useState<string | null>(null);
+  const [channelMeta, setChannelMeta] = useState<ChannelMeta | null>(null);
+  const [channelMembers, setChannelMembers] = useState<
+    { name: string; avatarUrl?: string | null }[]
+  >([]);
+  const [showScrollDown, setShowScrollDown] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -54,6 +70,9 @@ export function ChatConversation({
   const setSearchOpen = onSearchOpenChange ?? setSearchOpenLocal;
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const atBottomRef = useRef(true);
+  const typingUsersRef = useRef<Map<string, { name: string; timer: number }>>(new Map());
   const lastMessageAtRef = useRef<string | null>(null);
   const typingTimerRef = useRef<number | null>(null);
   const parsed = parseChatTarget(target);
@@ -86,6 +105,15 @@ export function ChatConversation({
     const list = (data.messages || []) as ChatMessage[];
     setMessages(list);
     if (data.peerReadAt) setPeerReadAt(data.peerReadAt);
+    if (data.channelMeta) setChannelMeta(data.channelMeta as ChannelMeta);
+    else setChannelMeta(null);
+    if (data.channelMembers) {
+      setChannelMembers(
+        (data.channelMembers as { name: string; avatarUrl?: string | null }[]) || []
+      );
+    } else {
+      setChannelMembers([]);
+    }
     lastMessageAtRef.current = list.length > 0 ? list[list.length - 1].createdAt : null;
     setLoading(false);
     if (list.length) markRead(list[list.length - 1].createdAt);
@@ -97,14 +125,23 @@ export function ChatConversation({
     setEditId(null);
     setEditDraft("");
     setSearchQuery("");
-    setTypingName(null);
-  }, [loadHistory]);
+    typingUsersRef.current.forEach((v) => window.clearTimeout(v.timer));
+    typingUsersRef.current.clear();
+    setTypingLabel(null);
+    onTypingChange?.(null);
+    atBottomRef.current = true;
+    setShowScrollDown(false);
+  }, [loadHistory, onTypingChange]);
 
   useEffect(() => {
     setActiveConversation(target);
     clearUnread(target);
     return () => setActiveConversation(null);
   }, [target, setActiveConversation, clearUnread]);
+
+  useEffect(() => {
+    onHeaderStateChange?.({ typingLabel, channelMembers });
+  }, [typingLabel, channelMembers, onHeaderStateChange]);
 
   const upsertMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => {
@@ -187,6 +224,13 @@ export function ChatConversation({
       }
     };
 
+    const syncTypingLabel = () => {
+      const names = [...typingUsersRef.current.values()].map((v) => v.name);
+      const label = formatTypingLabel(names);
+      setTypingLabel(label);
+      onTypingChange?.(label);
+    };
+
     const onTyping = (payload: { target: string; userName: string; typing: boolean; userId: string }) => {
       if (payload.userId === user.sub) return;
       if (parsed.kind === "dm") {
@@ -194,15 +238,33 @@ export function ChatConversation({
       } else if (payload.target !== target) {
         return;
       }
-      const name = payload.typing ? payload.userName : null;
-      setTypingName(name);
-      onTypingChange?.(name);
+
+      const existing = typingUsersRef.current.get(payload.userId);
+      if (existing) window.clearTimeout(existing.timer);
+
+      if (payload.typing) {
+        const timer = window.setTimeout(() => {
+          typingUsersRef.current.delete(payload.userId);
+          syncTypingLabel();
+        }, 3000);
+        typingUsersRef.current.set(payload.userId, { name: payload.userName, timer });
+      } else {
+        typingUsersRef.current.delete(payload.userId);
+      }
+      syncTypingLabel();
     };
 
     const onRead = (payload: { conversationKey: string; userId: string; lastReadAt?: string }) => {
       if (payload.conversationKey !== convKey) return;
-      if (parsed.kind === "dm" && payload.userId === parsed.userId) {
+      if (payload.userId === user.sub) return;
+      if (parsed.kind === "dm") {
+        if (payload.userId !== parsed.userId) return;
         setPeerReadAt(payload.lastReadAt || new Date().toISOString());
+        return;
+      }
+      if (parsed.kind === "general" || parsed.kind === "channel") {
+        const next = payload.lastReadAt || new Date().toISOString();
+        setPeerReadAt((prev) => (!prev || next > prev ? next : prev));
       }
     };
 
@@ -262,8 +324,24 @@ export function ChatConversation({
   }, [target, realtimeMode, upsertMessage]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (atBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages, editId]);
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    atBottomRef.current = atBottom;
+    setShowScrollDown(!atBottom);
+  }
+
+  function scrollToBottom() {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    atBottomRef.current = true;
+    setShowScrollDown(false);
+  }
 
   const typingEmitRef = useRef<number | null>(null);
 
@@ -424,11 +502,16 @@ export function ChatConversation({
           target={target}
           users={users}
           channels={channels}
+          channelMembers={channelMembers}
           onlineUserIds={onlineUserIds}
           connected={connected}
-          typingName={typingName}
+          typingLabel={typingLabel}
           searchOpen={searchOpen}
           onToggleSearch={() => setSearchOpen(!searchOpen)}
+          userId={user.sub}
+          userRole={user.role}
+          onChannelUpdated={onChannelUpdated}
+          onChannelDeleted={onChannelDeleted}
         />
       )}
 
@@ -439,48 +522,74 @@ export function ChatConversation({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search in this chat…"
             autoFocus
-            className="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full text-sm rounded-lg border border-slate-300 px-3 py-1.5 focus:outline-none"
           />
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 tg-chat-bg min-h-[200px]">
-        {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-8 h-8 rounded-full border-2 border-brand-100 border-t-brand-500 animate-spin" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-slate-400 text-sm text-center py-8">
-            {searchOpen && searchQuery.trim() ? "No matching messages." : "No messages yet. Say hello."}
-          </p>
-        ) : (
-          filtered.map((m) => {
-            const mine = m.sender._id === user.sub;
-            return (
-              <ChatMessageBubble
-                key={m._id}
-                message={m}
-                mine={mine}
-                showSender={parsed.kind !== "dm"}
-                peerReadAt={peerReadAt}
-                connected={connected}
-                avatarUrl={senderAvatar(m.sender._id)}
-                editing={editId === m._id}
-                editDraft={editId === m._id ? editDraft : undefined}
-                onEditDraftChange={setEditDraft}
-                onSaveEdit={() => void saveEdit()}
-                onCancelEdit={() => {
-                  setEditId(null);
-                  setEditDraft("");
-                }}
-                onContextMenu={(e, msg) => setMenu({ x: e.clientX, y: e.clientY, message: msg })}
-                onReaction={(emoji) => void reactToMessage(m._id, emoji)}
-                currentUserId={user.sub}
-              />
-            );
-          })
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="absolute inset-0 overflow-y-auto p-4 space-y-3 tg-chat-bg"
+        >
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="w-8 h-8 rounded-full border-2 border-brand-100 border-t-brand-500 animate-spin" />
+            </div>
+          ) : (
+            <>
+              {(parsed.kind === "general" || parsed.kind === "channel") && channelMeta && (
+                <ChannelCreatedBanner meta={channelMeta} />
+              )}
+              {filtered.length === 0 && !(parsed.kind === "general" || parsed.kind === "channel") ? (
+                <p className="text-slate-400 text-sm text-center py-8">
+                  {searchOpen && searchQuery.trim() ? "No matching messages." : "No messages yet. Say hello."}
+                </p>
+              ) : (
+                filtered.map((m) => {
+                  const mine = m.sender._id === user.sub;
+                  return (
+                    <ChatMessageBubble
+                      key={m._id}
+                      message={m}
+                      mine={mine}
+                      showSender={parsed.kind !== "dm"}
+                      peerReadAt={peerReadAt}
+                      connected={connected}
+                      avatarUrl={senderAvatar(m.sender._id)}
+                      editing={editId === m._id}
+                      editDraft={editId === m._id ? editDraft : undefined}
+                      onEditDraftChange={setEditDraft}
+                      onSaveEdit={() => void saveEdit()}
+                      onCancelEdit={() => {
+                        setEditId(null);
+                        setEditDraft("");
+                      }}
+                      onContextMenu={(e, msg) => setMenu({ x: e.clientX, y: e.clientY, message: msg })}
+                      onReaction={(emoji) => void reactToMessage(m._id, emoji)}
+                      currentUserId={user.sub}
+                    />
+                  );
+                })
+              )}
+            </>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {showScrollDown && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full bg-white border border-slate-200 shadow-lg flex items-center justify-center text-slate-600 hover:bg-slate-50 cursor-pointer"
+            aria-label="Scroll to latest messages"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <ChatComposer

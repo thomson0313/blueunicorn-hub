@@ -3,18 +3,33 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
+import { ChannelHeaderAvatar } from "@/components/chat/ChannelHeaderAvatar";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EditChannelModal } from "@/components/chat/EditChannelModal";
 import { anchoredPosition } from "@/lib/anchored-position";
+import { getChannelManagePermission } from "@/lib/chat-channel-permissions";
 import { parseChatTarget } from "@/lib/chat-target";
-import type { PublicUser } from "@/lib/types";
+import type { ChatChannel, PublicUser } from "@/lib/types";
+import type { Role } from "@/lib/repo";
+
+type ChannelMember = { name: string; avatarUrl?: string | null };
 
 function HeaderMenu({
   profileHref,
   searchOpen,
   onToggleSearch,
+  canEditChannel,
+  canDeleteChannel,
+  onEditChannel,
+  onDeleteChannel,
 }: {
   profileHref?: string | null;
   searchOpen?: boolean;
   onToggleSearch?: () => void;
+  canEditChannel?: boolean;
+  canDeleteChannel?: boolean;
+  onEditChannel?: () => void;
+  onDeleteChannel?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -44,7 +59,9 @@ function HeaderMenu({
     setMenuPos(anchoredPosition(rect.right - w, rect.bottom + 4, w, h));
   }, [menuOpen]);
 
-  if (!onToggleSearch && !profileHref) return null;
+  const hasItems =
+    onToggleSearch || profileHref || canEditChannel || canDeleteChannel;
+  if (!hasItems) return null;
 
   return (
     <div className="relative shrink-0" ref={menuRef}>
@@ -76,6 +93,30 @@ function HeaderMenu({
               {searchOpen ? "Close search" : "Search chat"}
             </button>
           )}
+          {canEditChannel && onEditChannel && (
+            <button
+              type="button"
+              onClick={() => {
+                onEditChannel();
+                setMenuOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer"
+            >
+              Edit channel
+            </button>
+          )}
+          {canDeleteChannel && onDeleteChannel && (
+            <button
+              type="button"
+              onClick={() => {
+                onDeleteChannel();
+                setMenuOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-red-600 cursor-pointer"
+            >
+              Delete channel
+            </button>
+          )}
           {profileHref && (
             <Link
               href={profileHref}
@@ -91,62 +132,121 @@ function HeaderMenu({
   );
 }
 
-export function ChatConversationHeader({
+type HeaderCoreProps = {
+  target: string;
+  users: PublicUser[];
+  channels: ChatChannel[];
+  channelMembers?: ChannelMember[];
+  onlineUserIds?: string[];
+  typingLabel?: string | null;
+  searchOpen?: boolean;
+  onToggleSearch?: () => void;
+  userId: string;
+  userRole: Role;
+  onChannelUpdated?: () => void;
+  onChannelDeleted?: () => void;
+  compact?: boolean;
+};
+
+function ChatHeaderCore({
   target,
   users,
   channels,
-  onlineUserIds,
-  connected,
-  typingName,
+  channelMembers = [],
+  onlineUserIds = [],
+  typingLabel,
   searchOpen,
   onToggleSearch,
-}: {
-  target: string;
-  users: PublicUser[];
-  channels: { _id: string; name: string }[];
-  onlineUserIds: string[];
-  connected: boolean;
-  typingName?: string | null;
-  searchOpen?: boolean;
-  onToggleSearch?: () => void;
-}) {
+  userId,
+  userRole,
+  onChannelUpdated,
+  onChannelDeleted,
+  compact,
+}: HeaderCoreProps) {
   const parsed = parseChatTarget(target);
+  const channel =
+    parsed.kind === "channel" ? channels.find((c) => c._id === parsed.channelId) : null;
+  const perm = getChannelManagePermission(
+    userId,
+    userRole,
+    target,
+    channel || (parsed.kind === "general" ? { createdBy: "", visibility: "public" } : null)
+  );
+  const isChannel = parsed.kind === "general" || parsed.kind === "channel";
+  const canEdit = isChannel && perm.canEdit;
+  const canDelete = isChannel && perm.canDelete && parsed.kind === "channel";
+
+  const [showEdit, setShowEdit] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   let title = "Chat";
   let subtitle: string | null = null;
   let avatarName: string | undefined;
   let avatarUrl: string | null | undefined;
   let profileHref: string | null = null;
-  let online = false;
+  let channelVisibility: "public" | "private" = "public";
 
   if (parsed.kind === "general") {
     title = "General";
     subtitle = "Public channel";
+    channelVisibility = "public";
   } else if (parsed.kind === "channel") {
-    const ch = channels.find((c) => c._id === parsed.channelId);
-    title = ch?.name || "Channel";
-    subtitle = "Channel";
+    title = channel?.name || "Channel";
+    channelVisibility = channel?.visibility || "public";
+    subtitle = channelVisibility === "private" ? "Private channel" : "Public channel";
   } else {
     const u = users.find((x) => x._id === parsed.userId);
     title = u?.name || "Direct Message";
     avatarName = u?.name;
     avatarUrl = u?.avatarUrl;
     profileHref = `/u/${parsed.userId}`;
-    online = onlineUserIds.includes(parsed.userId);
-    subtitle = online ? "Online" : "Offline";
+    if (!typingLabel) {
+      subtitle = onlineUserIds.includes(parsed.userId) ? "Online" : "Offline";
+    }
   }
 
-  if (typingName) subtitle = `${typingName} is typing…`;
+  if (typingLabel) subtitle = typingLabel;
+
+  async function confirmDeleteChannel() {
+    if (parsed.kind !== "channel") {
+      setShowDeleteConfirm(false);
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/chat/channels/${parsed.channelId}`, { method: "DELETE" });
+      if (res.ok) onChannelDeleted?.();
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
+  const avatarSize = compact ? 32 : 36;
 
   return (
-    <div className="shrink-0 border-b border-slate-200">
-      <div className="px-4 py-3 flex items-center gap-3">
+    <>
+      <div className={`flex items-center gap-2 ${compact ? "px-3 py-2" : "px-4 py-3"}`}>
         {parsed.kind === "dm" && avatarName && (
-          <Avatar name={avatarName} src={avatarUrl} size={36} />
+          <Avatar name={avatarName} src={avatarUrl} size={avatarSize} />
+        )}
+        {isChannel && (
+          <ChannelHeaderAvatar
+            channelName={title}
+            visibility={channelVisibility}
+            members={channelMembers}
+          />
         )}
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-slate-900 truncate">{title}</div>
-          <div className={`text-xs truncate ${typingName ? "text-brand-600" : "text-slate-500"}`}>
+          <div className={`font-semibold text-slate-900 truncate ${compact ? "text-sm" : ""}`}>
+            {title}
+          </div>
+          <div
+            className={`truncate ${compact ? "text-[11px]" : "text-xs"} ${
+              typingLabel ? "text-brand-600" : "text-slate-500"
+            }`}
+          >
             {subtitle}
           </div>
         </div>
@@ -154,8 +254,81 @@ export function ChatConversationHeader({
           profileHref={profileHref}
           searchOpen={searchOpen}
           onToggleSearch={onToggleSearch}
+          canEditChannel={canEdit}
+          canDeleteChannel={canDelete}
+          onEditChannel={() => setShowEdit(true)}
+          onDeleteChannel={() => setShowDeleteConfirm(true)}
         />
       </div>
+
+      {showEdit && (
+        <EditChannelModal
+          channelId={parsed.kind === "channel" ? parsed.channelId : null}
+          initialName={title}
+          isGeneral={parsed.kind === "general"}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => onChannelUpdated?.()}
+        />
+      )}
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete channel?"
+        message={`Delete "${title}" and all its messages? This cannot be undone.`}
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={() => void confirmDeleteChannel()}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+    </>
+  );
+}
+
+export function ChatConversationHeader({
+  target,
+  users,
+  channels,
+  channelMembers,
+  onlineUserIds,
+  connected,
+  typingLabel,
+  searchOpen,
+  onToggleSearch,
+  userId,
+  userRole,
+  onChannelUpdated,
+  onChannelDeleted,
+}: {
+  target: string;
+  users: PublicUser[];
+  channels: ChatChannel[];
+  channelMembers?: ChannelMember[];
+  onlineUserIds: string[];
+  connected: boolean;
+  typingLabel?: string | null;
+  searchOpen?: boolean;
+  onToggleSearch?: () => void;
+  userId: string;
+  userRole: Role;
+  onChannelUpdated?: () => void;
+  onChannelDeleted?: () => void;
+}) {
+  return (
+    <div className="shrink-0 border-b border-slate-200">
+      <ChatHeaderCore
+        target={target}
+        users={users}
+        channels={channels}
+        channelMembers={channelMembers}
+        onlineUserIds={onlineUserIds}
+        typingLabel={typingLabel}
+        searchOpen={searchOpen}
+        onToggleSearch={onToggleSearch}
+        userId={userId}
+        userRole={userRole}
+        onChannelUpdated={onChannelUpdated}
+        onChannelDeleted={onChannelDeleted}
+      />
       {!connected && (
         <div className="px-4 py-1.5 bg-amber-50 text-amber-800 text-xs border-t border-amber-100">
           Connection lost — reconnecting…
@@ -165,114 +338,80 @@ export function ChatConversationHeader({
   );
 }
 
-/** Popup chrome header with menu, minimize, close. */
 export function ChatPopupHeader({
   target,
   users,
   channels,
+  channelMembers,
   onlineUserIds,
   connected,
-  typingName,
+  typingLabel,
   minimized,
   searchOpen,
   onToggleMinimize,
   onClose,
   onToggleSearch,
+  userId,
+  userRole,
+  onChannelUpdated,
+  onChannelDeleted,
 }: {
   target: string;
   users: PublicUser[];
-  channels: { _id: string; name: string }[];
+  channels: ChatChannel[];
+  channelMembers?: ChannelMember[];
   onlineUserIds: string[];
   connected: boolean;
-  typingName?: string | null;
+  typingLabel?: string | null;
   minimized: boolean;
   searchOpen?: boolean;
   onToggleMinimize: () => void;
   onClose: () => void;
   onToggleSearch?: () => void;
+  userId: string;
+  userRole: Role;
+  onChannelUpdated?: () => void;
+  onChannelDeleted?: () => void;
 }) {
-  const parsed = parseChatTarget(target);
-
-  let title = "Chat";
-  let subtitle: string | null = null;
-  let avatarName: string | undefined;
-  let avatarUrl: string | null | undefined;
-  let profileHref: string | null = null;
-  let online = false;
-
-  if (parsed.kind === "general") {
-    title = "General";
-    subtitle = "Public channel";
-  } else if (parsed.kind === "channel") {
-    title = channels.find((c) => c._id === parsed.channelId)?.name || "Channel";
-    subtitle = "Channel";
-  } else {
-    const u = users.find((x) => x._id === parsed.userId);
-    title = u?.name || "Direct Message";
-    avatarName = u?.name;
-    avatarUrl = u?.avatarUrl;
-    profileHref = `/u/${parsed.userId}`;
-    online = onlineUserIds.includes(parsed.userId);
-    subtitle = online ? "Online" : "Offline";
-  }
-  if (typingName) subtitle = `${typingName} is typing…`;
-
   return (
     <div className="shrink-0 border-b border-slate-200 bg-slate-50">
-      <div className="px-3 py-2 flex items-center gap-2">
-        {parsed.kind === "dm" && avatarName && (
-          <span className="relative shrink-0">
-            <Avatar name={avatarName} src={avatarUrl} size={32} />
-            <span
-              className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-slate-50 ${
-                online ? "bg-emerald-500" : "bg-slate-300"
-              }`}
-            />
-          </span>
-        )}
+      <div className="flex items-center pr-1">
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm text-slate-900 truncate">{title}</div>
-          <div className={`text-[11px] truncate ${typingName ? "text-brand-600" : "text-slate-500"}`}>
-            {subtitle}
-          </div>
-        </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <HeaderMenu
-            profileHref={profileHref}
+          <ChatHeaderCore
+            target={target}
+            users={users}
+            channels={channels}
+            channelMembers={channelMembers}
+            onlineUserIds={onlineUserIds}
+            typingLabel={typingLabel}
             searchOpen={searchOpen}
             onToggleSearch={onToggleSearch}
+            userId={userId}
+            userRole={userRole}
+            onChannelUpdated={onChannelUpdated}
+            onChannelDeleted={() => {
+              onChannelDeleted?.();
+              onClose();
+            }}
+            compact
           />
-          <button
-            type="button"
-            onClick={onToggleMinimize}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-200 cursor-pointer"
-            aria-label={minimized ? "Expand chat" : "Collapse chat"}
-          >
-            {minimized ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                <polyline points="15 3 21 3 21 9" />
-                <polyline points="9 21 3 21 3 15" />
-                <line x1="21" y1="3" x2="14" y2="10" />
-                <line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                <polyline points="4 14 10 14 10 20" />
-                <polyline points="20 10 14 10 14 4" />
-                <line x1="14" y1="10" x2="21" y2="3" />
-                <line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-200 cursor-pointer"
-            aria-label="Close chat"
-          >
-            ×
-          </button>
         </div>
+        <button
+          type="button"
+          onClick={onToggleMinimize}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-200 cursor-pointer shrink-0"
+          aria-label={minimized ? "Expand chat" : "Collapse chat"}
+        >
+          {minimized ? "⤢" : "⤡"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-200 cursor-pointer shrink-0 mr-1"
+          aria-label="Close chat"
+        >
+          ×
+        </button>
       </div>
       {!connected && (
         <div className="px-3 py-1 bg-amber-50 text-amber-800 text-[11px] border-t border-amber-100">

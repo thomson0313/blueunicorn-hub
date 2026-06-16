@@ -23,6 +23,20 @@ export function formatMessageTime(iso: string, now = new Date()): string {
   return `${date}${year} ${time}`;
 }
 
+/** Long date for channel creation banners. */
+export function formatChannelCreatedAt(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString([], {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** Compact time for sidebar previews. */
 export function formatPreviewTime(iso: string, now = new Date()): string {
   const d = new Date(iso);

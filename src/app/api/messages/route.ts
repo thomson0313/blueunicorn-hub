@@ -4,7 +4,11 @@ import { connectDB } from "@/lib/db";
 import { dmKeyFor } from "@/lib/repo";
 import {
   createExtendedMessage,
+  getChannelById,
+  getChannelPeerReadAt,
+  getGeneralChannelMeta,
   getPeerReadAt,
+  listChannelMembers,
   listChannelMessages,
   listChannelMessagesSince,
   listDmMessagesExtended,
@@ -15,6 +19,7 @@ import {
 } from "@/lib/chat-repo";
 import { toChatMessage } from "@/lib/chat-message";
 import { dmConversationKey, parseChatTarget } from "@/lib/chat-target";
+import { listUsers } from "@/lib/repo";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
 
 const attachmentSchema = z.object({
@@ -65,16 +70,53 @@ export async function GET(req: Request) {
     if (parsed.kind === "channel") {
       const ok = await userCanAccessChannel(me.sub, parsed.channelId);
       if (!ok) throw new HttpError(403, "Not a member of this channel");
+      const convKey = `channel:${parsed.channelId}`;
       const rows = since
         ? await listChannelMessagesSince(parsed.channelId, since)
         : await listChannelMessages(parsed.channelId);
-      return NextResponse.json({ messages: rows.map((m) => toChatMessage(m)) });
+      const [peerReadAt, channel, members] = await Promise.all([
+        getChannelPeerReadAt(me.sub, convKey),
+        getChannelById(parsed.channelId),
+        listChannelMembers(parsed.channelId),
+      ]);
+      const users = await listUsers();
+      const creator = channel ? users.find((u) => u._id === channel.createdBy) : null;
+      return NextResponse.json({
+        messages: rows.map((m) => toChatMessage(m)),
+        peerReadAt,
+        channelMeta: channel
+          ? {
+              visibility: channel.visibility,
+              createdByName: creator?.name || "Unknown",
+              createdAt: channel.createdAt,
+              isGeneral: false,
+            }
+          : null,
+        channelMembers:
+          channel?.visibility === "private"
+            ? members
+            : members.slice(0, 8),
+      });
     }
 
+    const convKey = "general";
     const rows = since
       ? await listGeneralMessagesSinceExtended(since)
       : await listGeneralMessagesExtended();
-    return NextResponse.json({ messages: rows.map((m) => toChatMessage(m)) });
+    const [peerReadAt, generalMeta] = await Promise.all([
+      getChannelPeerReadAt(me.sub, convKey),
+      getGeneralChannelMeta(),
+    ]);
+    return NextResponse.json({
+      messages: rows.map((m) => toChatMessage(m)),
+      peerReadAt,
+      channelMeta: {
+        visibility: "public" as const,
+        createdByName: generalMeta.createdByName,
+        createdAt: generalMeta.createdAt,
+        isGeneral: true,
+      },
+    });
   } catch (err) {
     return handleError(err);
   }

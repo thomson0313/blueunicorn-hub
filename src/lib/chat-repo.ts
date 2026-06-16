@@ -583,6 +583,100 @@ export async function getPeerReadAt(
   return data?.last_read_at ?? null;
 }
 
+/** Latest read time among any other member in a group channel (general or custom). */
+export async function getChannelPeerReadAt(
+  userId: string,
+  conversationKey: string
+): Promise<string | null> {
+  const { data, error } = await getSupabase()
+    .from("conversation_read_cursors")
+    .select("last_read_at")
+    .eq("conversation_key", conversationKey)
+    .neq("user_id", userId);
+  dbError(error);
+  if (!data?.length) return null;
+  return data.reduce<string | null>((max, row) => {
+    const t = row.last_read_at as string;
+    return !max || t > max ? t : max;
+  }, null);
+}
+
+export async function getChannelById(channelId: string): Promise<ChatChannelRec | null> {
+  const { data, error } = await getSupabase()
+    .from("chat_channels")
+    .select("*")
+    .eq("id", channelId)
+    .maybeSingle();
+  dbError(error);
+  return data ? toChannelRec(data as ChannelRow) : null;
+}
+
+export type ChannelMemberInfo = {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
+export async function listChannelMembers(channelId: string): Promise<ChannelMemberInfo[]> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("chat_channel_members")
+    .select("user_id")
+    .eq("channel_id", channelId);
+  dbError(error);
+  const users = await listUsers();
+  return (data || []).map((row: { user_id: string }) => {
+    const u = users.find((x) => x._id === row.user_id);
+    return {
+      userId: row.user_id,
+      name: u?.name || "Member",
+      avatarUrl: u?.avatarUrl ?? null,
+    };
+  });
+}
+
+export async function updateChatChannel(
+  channelId: string,
+  name: string
+): Promise<ChatChannelRec | null> {
+  const ts = nowISO();
+  const { data, error } = await getSupabase()
+    .from("chat_channels")
+    .update({ name: name.trim(), updated_at: ts })
+    .eq("id", channelId)
+    .select()
+    .maybeSingle();
+  dbError(error);
+  return data ? toChannelRec(data as ChannelRow) : null;
+}
+
+export async function deleteChatChannel(channelId: string): Promise<boolean> {
+  const { error } = await getSupabase().from("chat_channels").delete().eq("id", channelId);
+  dbError(error);
+  return true;
+}
+
+export async function getGeneralChannelMeta(): Promise<{
+  createdAt: string | null;
+  createdByName: string;
+}> {
+  const sb = getSupabase();
+  const users = await listUsers();
+  const admin = users.find((u) => u.role === "admin");
+  const { data: first } = await sb
+    .from("messages")
+    .select("created_at, sender")
+    .eq("channel_type", "general")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const sender = first?.sender ? users.find((u) => u._id === first.sender) : null;
+  return {
+    createdAt: first?.created_at ?? null,
+    createdByName: sender?.role === "admin" ? sender.name : admin?.name || "Admin",
+  };
+}
+
 export async function getMessageById(messageId: string): Promise<ExtendedMessageRec | null> {
   const { data, error } = await getSupabase()
     .from("messages")

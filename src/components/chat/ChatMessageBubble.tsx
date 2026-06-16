@@ -78,10 +78,10 @@ export function ChatMessageBubble({
                 value={editDraft ?? ""}
                 onChange={(e) => onEditDraftChange?.(e.target.value)}
                 rows={2}
-                className={`w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 resize-none ${
+                className={`w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none resize-none ${
                   mine
-                    ? "bg-white/95 text-slate-900 border border-white/40 focus:ring-white/80 placeholder:text-slate-400"
-                    : "bg-slate-50 text-slate-900 border border-slate-300 focus:ring-brand-500"
+                    ? "bg-white/95 text-slate-900 border border-white/40 placeholder:text-slate-400"
+                    : "bg-slate-50 text-slate-900 border border-slate-300"
                 }`}
                 autoFocus
               />

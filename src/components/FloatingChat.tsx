@@ -13,13 +13,16 @@ const SIDEBAR_WIDTH = "20rem"; // w-80
 
 export function FloatingChat() {
   const pathname = usePathname();
-  const { totalUnread, onlineUserIds, unread, socketConnected } = useApp();
+  const { totalUnread, onlineUserIds, unread, socketConnected, user } = useApp();
   const connected = socketConnected;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [popupTarget, setPopupTarget] = useState<string | null>(null);
   const [popupMinimized, setPopupMinimized] = useState(false);
-  const [popupTyping, setPopupTyping] = useState<string | null>(null);
+  const [popupHeader, setPopupHeader] = useState<{
+    typingLabel: string | null;
+    channelMembers: { name: string; avatarUrl?: string | null }[];
+  }>({ typingLabel: null, channelMembers: [] });
   const [searchOpen, setSearchOpen] = useState(false);
 
   const [users, setUsers] = useState<PublicUser[]>([]);
@@ -52,6 +55,7 @@ export function FloatingChat() {
     setPopupTarget(target);
     setPopupMinimized(false);
     setSearchOpen(false);
+    setPopupHeader({ typingLabel: null, channelMembers: [] });
   }
 
   const hideFab = pathname === "/chat";
@@ -90,18 +94,27 @@ export function FloatingChat() {
             target={popupTarget}
             users={users}
             channels={channels}
+            channelMembers={popupHeader.channelMembers}
             onlineUserIds={onlineUserIds}
             connected={connected}
-            typingName={popupTyping}
+            typingLabel={popupHeader.typingLabel}
             minimized={popupMinimized}
             searchOpen={searchOpen}
+            userId={user.sub}
+            userRole={user.role}
             onToggleMinimize={() => setPopupMinimized((m) => !m)}
             onClose={() => {
               setPopupTarget(null);
               setPopupMinimized(false);
               setSearchOpen(false);
+              setPopupHeader({ typingLabel: null, channelMembers: [] });
             }}
             onToggleSearch={() => setSearchOpen((o) => !o)}
+            onChannelUpdated={() => void refreshLists()}
+            onChannelDeleted={() => {
+              setPopupTarget(null);
+              void refreshLists();
+            }}
           />
           <div className={popupMinimized ? "hidden" : "flex flex-col flex-1 min-h-0"}>
             {loading && users.length === 0 ? (
@@ -113,10 +126,15 @@ export function FloatingChat() {
                 channels={channels}
                 showHeader={false}
                 className="flex-1 min-h-0"
-                onTypingChange={setPopupTyping}
+                onHeaderStateChange={setPopupHeader}
                 searchOpen={searchOpen}
                 onSearchOpenChange={setSearchOpen}
                 onMessageDeleted={() => void refreshLists()}
+                onChannelUpdated={() => void refreshLists()}
+                onChannelDeleted={() => {
+                  setPopupTarget(null);
+                  void refreshLists();
+                }}
               />
             )}
           </div>
