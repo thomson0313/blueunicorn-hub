@@ -48,6 +48,17 @@ export function ChatRightSidebar({
 
   const q = query.trim().toLowerCase();
 
+  const { dmUnread, channelUnread } = useMemo(() => {
+    let dm = 0;
+    let channel = 0;
+    for (const [key, count] of Object.entries(unread)) {
+      if (!count) continue;
+      if (key === "general" || key.startsWith("channel:")) channel += count;
+      else dm += count;
+    }
+    return { dmUnread: dm, channelUnread: channel };
+  }, [unread]);
+
   const dmItems = useMemo(() => {
     return users
       .map((u) => {
@@ -124,8 +135,18 @@ export function ChatRightSidebar({
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
           <div className="flex rounded-lg bg-slate-100 p-0.5">
-            <TabButton active={tab === "dm"} onClick={() => setTab("dm")} label="Direct message" />
-            <TabButton active={tab === "channel"} onClick={() => setTab("channel")} label="Channel" />
+            <TabButton
+              active={tab === "dm"}
+              onClick={() => setTab("dm")}
+              label="Direct message"
+              unread={dmUnread}
+            />
+            <TabButton
+              active={tab === "channel"}
+              onClick={() => setTab("channel")}
+              label="Channel"
+              unread={channelUnread}
+            />
           </div>
         </div>
 
@@ -195,20 +216,27 @@ function TabButton({
   active,
   onClick,
   label,
+  unread = 0,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  unread?: number;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex-1 py-1.5 text-xs font-medium rounded-md cursor-pointer transition ${
+      className={`relative flex-1 py-1.5 text-xs font-medium rounded-md cursor-pointer transition ${
         active ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
       }`}
     >
       {label}
+      {unread > 0 && (
+        <span className="absolute -top-1 -right-0.5 text-[10px] min-w-4 h-4 px-1 rounded-full bg-brand-500 text-white flex items-center justify-center leading-none">
+          {unread > 99 ? "99+" : unread}
+        </span>
+      )}
     </button>
   );
 }
