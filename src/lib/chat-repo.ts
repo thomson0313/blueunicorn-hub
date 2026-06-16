@@ -614,6 +614,7 @@ export async function getChannelById(channelId: string): Promise<ChatChannelRec 
 export type ChannelMemberInfo = {
   userId: string;
   name: string;
+  username: string | null;
   avatarUrl: string | null;
 };
 
@@ -630,6 +631,7 @@ export async function listChannelMembers(channelId: string): Promise<ChannelMemb
     return {
       userId: row.user_id,
       name: u?.name || "Member",
+      username: u?.username ?? null,
       avatarUrl: u?.avatarUrl ?? null,
     };
   });

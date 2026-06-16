@@ -9,10 +9,23 @@ import {
   useState,
 } from "react";
 import { ChatAttachmentPreviewModal } from "@/components/chat/ChatAttachmentPreviewModal";
+import { AnchoredPortal } from "@/components/chat/AnchoredPortal";
 import { ChatEmojiAutocomplete, ChatEmojiPicker } from "@/components/chat/ChatEmojiPicker";
+import { ChatMentionAutocomplete } from "@/components/chat/ChatMentionAutocomplete";
+import {
+  ChatMentionTextarea,
+  type ChatMentionTextareaHandle,
+} from "@/components/chat/ChatMentionTextarea";
 import { isImageMime } from "@/lib/chat-attachment-utils";
 import type { AttachmentLike } from "@/lib/chat-attachment-actions";
 import { EMOJI_SHORTCODES } from "@/lib/chat-emoji";
+import {
+  buildMentionOptions,
+  detectMentionQuery,
+  type MentionMember,
+  type MentionOption,
+  optionLabel,
+} from "@/lib/chat-mentions";
 
 /** Local draft attachment — uploaded only when the message is sent. */
 export type DraftAttachment = {
@@ -39,6 +52,8 @@ export const ChatComposer = forwardRef<
     onCancelReply?: () => void;
     onSend: (payload: { content: string; attachments: DraftAttachment[] }) => Promise<void>;
     onActivity?: () => void;
+    typingLabel?: string | null;
+    mentionMembers?: MentionMember[];
   }
 >(function ChatComposer(
   {
@@ -50,6 +65,8 @@ export const ChatComposer = forwardRef<
     onCancelReply,
     onSend,
     onActivity,
+    typingLabel = null,
+    mentionMembers = [],
   },
   ref
 ) {
@@ -61,9 +78,12 @@ export const ChatComposer = forwardRef<
   const [dragOver, setDragOver] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentLike | null>(null);
   const composerRootRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<ChatMentionTextareaHandle>(null);
+  const inputAreaRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [cursorPos, setCursorPos] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const cancelRecordingRef = useRef(false);
@@ -77,6 +97,12 @@ export const ChatComposer = forwardRef<
   const hasContent = draft.trim().length > 0 || attachments.length > 0;
   const colonMatch = draft.match(/:([a-z0-9_+-]{1,})$/i);
   const colonQuery = colonMatch?.[1] || "";
+  const mentionCtx = detectMentionQuery(draft, cursorPos);
+  const mentionOptions = mentionCtx && mentionMembers.length > 0
+    ? buildMentionOptions(mentionMembers, mentionCtx.query)
+    : [];
+  const mentionOpen = !!mentionCtx && mentionMembers.length > 0;
+  const enableMentions = mentionMembers.length > 0;
 
   const revokeAttachment = useCallback((att: DraftAttachment) => {
     URL.revokeObjectURL(att.previewUrl);
@@ -104,6 +130,30 @@ export const ChatComposer = forwardRef<
     };
   }, [revokeAttachment]);
 
+  useEffect(() => {
+    if (mentionOpen) setMentionIndex(0);
+  }, [mentionOpen, mentionCtx?.query]);
+
+  function handleDraftChange(text: string, cursor: number) {
+    onDraftChange(text);
+    setCursorPos(cursor);
+    onActivity?.();
+  }
+
+  function insertMention(option: MentionOption) {
+    if (!mentionCtx) return;
+    const handle = optionLabel(option);
+    const before = draft.slice(0, mentionCtx.start);
+    const after = draft.slice(cursorPos);
+    const next = `${before}@${handle} ${after}`;
+    const nextCursor = before.length + handle.length + 2;
+    onDraftChange(next);
+    setCursorPos(nextCursor);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }
+
   async function handleSend() {
     if (!hasContent || sending || recording || !canSend) return;
     setSending(true);
@@ -121,7 +171,6 @@ export const ChatComposer = forwardRef<
     try {
       await onSend({ content, attachments: attachmentsSnapshot });
       for (const att of attachmentsSnapshot) revokeAttachment(att);
-      if (textareaRef.current) textareaRef.current.style.height = "auto";
     } catch (err) {
       setAttachments(attachmentsSnapshot);
       setSendError(err instanceof Error ? err.message : "Failed to send message");
@@ -131,14 +180,35 @@ export const ChatComposer = forwardRef<
   }
 
   function handleComposerKeyDown(e: React.KeyboardEvent) {
+    if (mentionOpen) return;
     if (e.key !== "Enter" || e.shiftKey || recording || sending || !canSend || !hasContent) return;
     if (!composerRootRef.current?.contains(e.target as Node)) return;
-    if (e.target === textareaRef.current) return;
     e.preventDefault();
     void handleSend();
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionOpen && mentionOptions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIndex((i) => (i + 1) % mentionOptions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIndex((i) => (i - 1 + mentionOptions.length) % mentionOptions.length);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        insertMention(mentionOptions[mentionIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
@@ -214,13 +284,6 @@ export const ChatComposer = forwardRef<
       setSendError("Microphone access denied");
     }
   }
-
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-  }, [draft]);
 
   useEffect(() => {
     if (!emojiOpen) return;
@@ -330,8 +393,8 @@ export const ChatComposer = forwardRef<
 
       {sendError && <p className="px-3 pt-2 text-xs text-red-600">{sendError}</p>}
 
-      <div className="relative p-2 min-w-0">
-        {colonQuery && !recording && (
+      <div className="relative p-2 min-w-0" ref={inputAreaRef}>
+        {colonQuery && !recording && !mentionOpen && (
           <ChatEmojiAutocomplete
             query={colonQuery}
             onPick={(code) => {
@@ -340,6 +403,17 @@ export const ChatComposer = forwardRef<
               onDraftChange(draft.replace(/:([a-z0-9_+-]{1,})$/i, emoji));
             }}
           />
+        )}
+
+        {mentionOpen && (
+          <AnchoredPortal open anchorRef={inputAreaRef} placement="above" zIndex={100}>
+            <ChatMentionAutocomplete
+              options={mentionOptions}
+              selectedIndex={mentionIndex}
+              onHighlight={setMentionIndex}
+              onSelect={insertMention}
+            />
+          </AnchoredPortal>
         )}
 
         <div
@@ -370,20 +444,29 @@ export const ChatComposer = forwardRef<
             }}
           />
 
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => {
-              onDraftChange(e.target.value);
-              onActivity?.();
-            }}
-            onKeyDown={onKeyDown}
-            onPaste={handlePaste}
-            placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
-            disabled={recording || sending}
-            rows={1}
-            className="flex-1 min-w-0 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
-          />
+          {enableMentions ? (
+            <ChatMentionTextarea
+              ref={textareaRef}
+              value={draft}
+              onChange={handleDraftChange}
+              onKeyDown={onKeyDown}
+              onPaste={handlePaste}
+              mentionMembers={mentionMembers}
+              placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
+              disabled={recording || sending}
+            />
+          ) : (
+            <textarea
+              value={draft}
+              onChange={(e) => handleDraftChange(e.target.value, e.target.selectionStart)}
+              onKeyDown={onKeyDown}
+              onPaste={handlePaste}
+              placeholder={recording ? "Recording…" : sending ? "Sending…" : placeholder}
+              disabled={recording || sending}
+              rows={1}
+              className="flex-1 min-w-0 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
+            />
+          )}
 
           <div className="relative shrink-0" ref={emojiRef}>
             <button
@@ -402,6 +485,7 @@ export const ChatComposer = forwardRef<
             </button>
             {emojiOpen && !recording && !sending && (
               <ChatEmojiPicker
+                anchorRef={emojiRef}
                 onPick={(emoji) => onDraftChange(draft + emoji)}
                 onClose={() => setEmojiOpen(false)}
               />
@@ -441,7 +525,14 @@ export const ChatComposer = forwardRef<
             )}
           </button>
         </div>
-        <p className="text-[10px] text-slate-400 mt-1 px-1">Shift+Enter for new line · Paste images to attach</p>
+        <div className="flex items-center justify-between gap-2 mt-1 px-1 min-h-[14px]">
+          <p className={`text-[10px] truncate min-w-0 flex-1 ${typingLabel ? "text-brand-600" : "text-transparent"}`}>
+            {typingLabel || "."}
+          </p>
+          <p className="text-[10px] text-slate-400 shrink-0 text-right">
+            Shift+Enter for new line · Paste images to attach
+          </p>
+        </div>
       </div>
 
       {previewAttachment && (

@@ -5,7 +5,12 @@ export type ConversationCacheEntry = {
   messages: ChatMessage[];
   peerReadAt: string | null;
   channelMeta: ChannelMeta | null;
-  channelMembers: { name: string; avatarUrl?: string | null }[];
+  channelMembers: {
+    userId: string;
+    name: string;
+    username: string | null;
+    avatarUrl?: string | null;
+  }[];
   lastMessageAt: string | null;
 };
 

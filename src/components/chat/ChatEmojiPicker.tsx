@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AnchoredPortal } from "@/components/chat/AnchoredPortal";
 import {
   EMOJI_CATEGORIES,
   filterEmojis,
@@ -46,9 +47,11 @@ function CategoryIcon({ id, active }: { id: string; active: boolean }) {
 }
 
 export function ChatEmojiPicker({
+  anchorRef,
   onPick,
   onClose,
 }: {
+  anchorRef: React.RefObject<HTMLElement | null>;
   onPick: (emoji: string) => void;
   onClose?: () => void;
 }) {
@@ -58,12 +61,14 @@ export function ChatEmojiPicker({
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
-      if (ref.current?.contains(e.target as Node)) return;
+      const target = e.target as Node;
+      if (ref.current?.contains(target)) return;
+      if (anchorRef.current?.contains(target)) return;
       onClose?.();
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [onClose]);
+  }, [onClose, anchorRef]);
 
   const recent = getRecentEmojis();
   const searching = !!query.trim();
@@ -78,10 +83,11 @@ export function ChatEmojiPicker({
   }
 
   return (
-    <div
-      ref={ref}
-      className="absolute bottom-full right-0 mb-2 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-50 flex flex-col max-h-80"
-    >
+    <AnchoredPortal open anchorRef={anchorRef} placement="above" align="right" zIndex={100} width={288}>
+      <div
+        ref={ref}
+        className="w-72 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-80"
+      >
       <div className="p-2 border-b border-slate-100">
         <input
           value={query}
@@ -135,7 +141,8 @@ export function ChatEmojiPicker({
           <p className="text-xs text-slate-400 text-center py-4">No emojis found</p>
         )}
       </div>
-    </div>
+      </div>
+    </AnchoredPortal>
   );
 }
 
@@ -149,7 +156,7 @@ export function ChatEmojiAutocomplete({
   const matches = filterShortcodes(query);
   if (!matches.length) return null;
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-1 max-h-40 overflow-y-auto">
+    <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg z-[100] py-1 max-h-40 overflow-y-auto">
       {matches.map(({ code, emoji }) => (
         <button
           key={code}

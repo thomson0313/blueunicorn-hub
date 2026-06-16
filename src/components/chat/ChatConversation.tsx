@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApp, useRealtimeMode } from "@/components/AppProvider";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ChatComposer, type ChatComposerHandle, type DraftAttachment } from "@/components/chat/ChatComposer";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/chat-conversation-cache";
 import { messageToPreviewTarget } from "@/lib/chat-preview-sync";
 import { formatTypingLabel } from "@/lib/chat-typing";
+import { mentionHandle, type MentionMember } from "@/lib/chat-mentions";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { downloadChatAttachment } from "@/lib/chat-attachment-actions";
 import type { ChatChannel, ChatMessage, PublicUser } from "@/lib/types";
@@ -49,8 +50,12 @@ export function ChatConversation({
   onChannelUpdated?: () => void;
   onChannelDeleted?: () => void;
   onHeaderStateChange?: (state: {
-    typingLabel: string | null;
-    channelMembers: { name: string; avatarUrl?: string | null }[];
+    channelMembers: {
+      userId: string;
+      name: string;
+      username: string | null;
+      avatarUrl?: string | null;
+    }[];
   }) => void;
 }) {
   const { user, socket, socketConnected, avatarUrl, onlineUserIds, setActiveConversation, setConversationViewed, chatDrafts, setChatDraft } = useApp();
@@ -68,7 +73,7 @@ export function ChatConversation({
   const [peerReadAt, setPeerReadAt] = useState<string | null>(null);
   const [channelMeta, setChannelMeta] = useState<ChannelMeta | null>(null);
   const [channelMembers, setChannelMembers] = useState<
-    { name: string; avatarUrl?: string | null }[]
+    { userId: string; name: string; username: string | null; avatarUrl?: string | null }[]
   >([]);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
@@ -158,7 +163,7 @@ export function ChatConversation({
 
   const loadHistory = useCallback(async () => {
     const cached = getConversationCache(target);
-    if (cached) {
+    if (cached && cached.channelMembers.every((m) => m.userId)) {
       setMessages(cached.messages);
       setPeerReadAt(cached.peerReadAt);
       setChannelMeta(cached.channelMeta);
@@ -177,9 +182,20 @@ export function ChatConversation({
     if (data.channelMeta) setChannelMeta(data.channelMeta as ChannelMeta);
     else setChannelMeta(null);
     if (data.channelMembers) {
-      setChannelMembers(
-        (data.channelMembers as { name: string; avatarUrl?: string | null }[]) || []
-      );
+      const members = (
+        data.channelMembers as {
+          userId: string;
+          name: string;
+          username?: string | null;
+          avatarUrl?: string | null;
+        }[]
+      ).map((m) => ({
+        userId: m.userId,
+        name: m.name,
+        username: m.username ?? null,
+        avatarUrl: m.avatarUrl ?? null,
+      }));
+      setChannelMembers(members);
     } else {
       setChannelMembers([]);
     }
@@ -191,7 +207,17 @@ export function ChatConversation({
       peerReadAt: data.peerReadAt ?? null,
       channelMeta: (data.channelMeta as ChannelMeta) ?? null,
       channelMembers:
-        (data.channelMembers as { name: string; avatarUrl?: string | null }[]) || [],
+        (data.channelMembers as {
+          userId: string;
+          name: string;
+          username?: string | null;
+          avatarUrl?: string | null;
+        }[])?.map((m) => ({
+          userId: m.userId,
+          name: m.name,
+          username: m.username ?? null,
+          avatarUrl: m.avatarUrl ?? null,
+        })) || [],
       lastMessageAt: lastMessageAtRef.current,
     });
   }, [target, markRead]);
@@ -247,8 +273,18 @@ export function ChatConversation({
   }, [target, setActiveConversation, setConversationViewed]);
 
   useEffect(() => {
-    onHeaderStateChange?.({ typingLabel, channelMembers });
-  }, [typingLabel, channelMembers, onHeaderStateChange]);
+    onHeaderStateChange?.({ channelMembers });
+  }, [channelMembers, onHeaderStateChange]);
+
+  const mentionMembers = useMemo<MentionMember[]>(() => {
+    if (parsed.kind !== "general" && parsed.kind !== "channel") return [];
+    return channelMembers.map((m) => ({
+      userId: m.userId,
+      name: m.name,
+      username: mentionHandle(m),
+      avatarUrl: m.avatarUrl,
+    }));
+  }, [parsed.kind, channelMembers]);
 
   const upsertMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => {
@@ -617,28 +653,44 @@ export function ChatConversation({
 
   async function confirmDelete() {
     if (!deleteTarget) return;
+    const id = deleteTarget._id;
+    const snapshot = deleteTarget;
     setDeleting(true);
+    setDeleteTarget(null);
+    setMenu(null);
+    removeMessage(id);
     try {
-      const res = await fetch(`/api/messages/${deleteTarget._id}`, { method: "DELETE" });
-      if (res.ok) removeMessage(deleteTarget._id);
+      const res = await fetch(`/api/messages/${id}`, { method: "DELETE" });
+      if (!res.ok) upsertMessage(snapshot);
+    } catch {
+      upsertMessage(snapshot);
     } finally {
       setDeleting(false);
-      setDeleteTarget(null);
-      setMenu(null);
     }
   }
 
   async function saveEdit() {
     if (!editId || !editDraft.trim()) return;
-    const res = await fetch(`/api/messages/${editId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: editDraft.trim() }),
-    });
-    const data = await res.json();
-    if (res.ok && data.message) upsertMessage(data.message);
+    const content = editDraft.trim();
+    const messageId = editId;
+    const snapshot = messagesRef.current.find((m) => m._id === messageId);
+    if (snapshot) {
+      upsertMessage({ ...snapshot, content, editedAt: new Date().toISOString() });
+    }
     setEditId(null);
     setEditDraft("");
+    try {
+      const res = await fetch(`/api/messages/${messageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json();
+      if (res.ok && data.message) upsertMessage(data.message);
+      else if (snapshot) upsertMessage(snapshot);
+    } catch {
+      if (snapshot) upsertMessage(snapshot);
+    }
   }
 
   async function copyMessageImage(message: ChatMessage) {
@@ -685,7 +737,6 @@ export function ChatConversation({
           channelMembers={channelMembers}
           onlineUserIds={onlineUserIds}
           connected={connected}
-          typingLabel={typingLabel}
           searchOpen={searchOpen}
           onToggleSearch={() => setSearchOpen(!searchOpen)}
           userId={user.sub}
@@ -813,6 +864,8 @@ export function ChatConversation({
         onCancelReply={() => setReplyTo(null)}
         onSend={sendMessage}
         onActivity={notifyTyping}
+        typingLabel={typingLabel}
+        mentionMembers={mentionMembers}
       />
 
       {menu && (

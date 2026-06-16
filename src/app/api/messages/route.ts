@@ -92,10 +92,7 @@ export async function GET(req: Request) {
               isGeneral: false,
             }
           : null,
-        channelMembers:
-          channel?.visibility === "private"
-            ? members
-            : members.slice(0, 8),
+        channelMembers: members,
       });
     }
 
@@ -103,9 +100,10 @@ export async function GET(req: Request) {
     const rows = since
       ? await listGeneralMessagesSinceExtended(since)
       : await listGeneralMessagesExtended();
-    const [peerReadAt, generalMeta] = await Promise.all([
+    const [peerReadAt, generalMeta, allUsers] = await Promise.all([
       getChannelPeerReadAt(me.sub, convKey),
       getGeneralChannelMeta(),
+      listUsers(),
     ]);
     return NextResponse.json({
       messages: rows.map((m) => toChatMessage(m)),
@@ -116,6 +114,12 @@ export async function GET(req: Request) {
         createdAt: generalMeta.createdAt,
         isGeneral: true,
       },
+      channelMembers: allUsers.map((u) => ({
+        userId: u._id,
+        name: u.name,
+        username: u.username ?? null,
+        avatarUrl: u.avatarUrl ?? null,
+      })),
     });
   } catch (err) {
     return handleError(err);

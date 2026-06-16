@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { createPortal } from "react-dom";
 import { useApp } from "@/components/AppProvider";
 import { IconBell } from "@/components/icons/NavIcons";
+import { anchoredPosition } from "@/lib/anchored-position";
 import { timeAgo } from "@/lib/time-ago";
 import type { HubNotification } from "@/lib/hub-notifications";
 
@@ -21,6 +23,9 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
   const [items, setItems] = useState<HubNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [panelPos, setPanelPos] = useState<{ left: number; top: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
   const isLight = theme === "light";
 
   const loadList = useCallback(async () => {
@@ -48,6 +53,39 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
     return () => document.removeEventListener("mousedown", onOutside);
   }, [open]);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) {
+      setPanelPos(null);
+      return;
+    }
+
+    function update() {
+      const btn = buttonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const w = Math.min(360, window.innerWidth - 16);
+      const h = Math.min(420, window.innerHeight * 0.7);
+      const x = isLight ? rect.right + 8 : rect.right - w;
+      const y =
+        placement === "bottom"
+          ? rect.top - h - 8
+          : rect.bottom + 8;
+      setPanelPos(anchoredPosition(x, y, w, h));
+    }
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, isLight, placement]);
+
   async function markRead(id: string) {
     await fetch("/api/notifications", {
       method: "PATCH",
@@ -58,16 +96,12 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
     void loadList();
   }
 
-  const panelPos = isLight
-    ? "left-full ml-2 bottom-0"
-    : placement === "bottom"
-      ? "right-0 bottom-full mb-2"
-      : "right-0 top-full mt-2";
-
-  const popupEl = open ? (
-    <div
-      className={`absolute z-[60] w-[min(360px,calc(100vw-2rem))] max-h-[min(420px,70vh)] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl ${panelPos}`}
-    >
+  const popupEl =
+    open && panelPos && mounted ? (
+      <div
+        className="fixed z-[100] w-[min(360px,calc(100vw-2rem))] max-h-[min(420px,70vh)] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
+        style={{ left: panelPos.left, top: panelPos.top }}
+      >
           <div className="px-4 py-3 border-b border-slate-100 shrink-0">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold text-slate-900">Notifications</h3>
@@ -124,13 +158,16 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
             )}
           </div>
         </div>
-  ) : null;
+    ) : null;
+
+  const popupPortal = popupEl ? createPortal(popupEl, document.body) : null;
 
   if (isLight) {
     return (
       <div ref={rootRef} className="inline-flex">
         <div className="relative">
           <button
+            ref={buttonRef}
             type="button"
             onClick={() => setOpen((o) => !o)}
             className="relative w-10 h-10 rounded-lg flex items-center justify-center cursor-pointer transition hover:bg-white/10 text-white"
@@ -144,7 +181,7 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
               </span>
             )}
           </button>
-          {popupEl}
+          {popupPortal}
         </div>
       </div>
     );
@@ -153,6 +190,7 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="relative w-10 h-10 rounded-lg flex items-center justify-center cursor-pointer transition hover:bg-white/10 text-brand-50 hover:text-white"
@@ -166,7 +204,7 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
           </span>
         )}
       </button>
-      {popupEl}
+      {popupPortal}
     </div>
   );
 }

@@ -12,7 +12,22 @@ import { parseChatTarget } from "@/lib/chat-target";
 import type { ChatChannel, PublicUser } from "@/lib/types";
 import type { Role } from "@/lib/repo";
 
-type ChannelMember = { name: string; avatarUrl?: string | null };
+type ChannelMember = {
+  userId: string;
+  name: string;
+  username?: string | null;
+  avatarUrl?: string | null;
+};
+
+function channelMemberSubtitle(
+  members: ChannelMember[],
+  onlineUserIds: string[]
+): string {
+  const memberCount = members.length;
+  const onlineCount = members.filter((m) => onlineUserIds.includes(m.userId)).length;
+  const memberLabel = memberCount === 1 ? "member" : "members";
+  return `${memberCount} ${memberLabel}, ${onlineCount} online`;
+}
 
 function HeaderMenu({
   profileHref,
@@ -138,7 +153,6 @@ type HeaderCoreProps = {
   channels: ChatChannel[];
   channelMembers?: ChannelMember[];
   onlineUserIds?: string[];
-  typingLabel?: string | null;
   searchOpen?: boolean;
   onToggleSearch?: () => void;
   userId: string;
@@ -154,7 +168,6 @@ function ChatHeaderCore({
   channels,
   channelMembers = [],
   onlineUserIds = [],
-  typingLabel,
   searchOpen,
   onToggleSearch,
   userId,
@@ -189,24 +202,30 @@ function ChatHeaderCore({
 
   if (parsed.kind === "general") {
     title = "General";
-    subtitle = "Public channel";
     channelVisibility = "public";
+    subtitle = channelMemberSubtitle(
+      channelMembers.length
+        ? channelMembers
+        : users.map((u) => ({
+            userId: u._id,
+            name: u.name,
+            username: u.username,
+            avatarUrl: u.avatarUrl,
+          })),
+      onlineUserIds
+    );
   } else if (parsed.kind === "channel") {
     title = channel?.name || "Channel";
     channelVisibility = channel?.visibility || "public";
-    subtitle = channelVisibility === "private" ? "Private channel" : "Public channel";
+    subtitle = channelMemberSubtitle(channelMembers, onlineUserIds);
   } else {
     const u = users.find((x) => x._id === parsed.userId);
     title = u?.name || "Direct Message";
     avatarName = u?.name;
     avatarUrl = u?.avatarUrl;
     profileHref = `/u/${parsed.userId}`;
-    if (!typingLabel) {
-      subtitle = onlineUserIds.includes(parsed.userId) ? "Online" : "Offline";
-    }
+    subtitle = onlineUserIds.includes(parsed.userId) ? "Online" : "Offline";
   }
-
-  if (typingLabel) subtitle = typingLabel;
 
   async function confirmDeleteChannel() {
     if (parsed.kind !== "channel") {
@@ -235,7 +254,7 @@ function ChatHeaderCore({
           <ChannelHeaderAvatar
             channelName={title}
             visibility={channelVisibility}
-            members={channelMembers}
+            members={channelMembers.map((m) => ({ name: m.name, avatarUrl: m.avatarUrl }))}
           />
         )}
         <div className="flex-1 min-w-0">
@@ -243,9 +262,7 @@ function ChatHeaderCore({
             {title}
           </div>
           <div
-            className={`truncate ${compact ? "text-[11px]" : "text-xs"} ${
-              typingLabel ? "text-brand-600" : "text-slate-500"
-            }`}
+            className={`truncate ${compact ? "text-[11px]" : "text-xs"} text-slate-500`}
           >
             {subtitle}
           </div>
@@ -291,7 +308,6 @@ export function ChatConversationHeader({
   channelMembers,
   onlineUserIds,
   connected,
-  typingLabel,
   searchOpen,
   onToggleSearch,
   userId,
@@ -305,7 +321,6 @@ export function ChatConversationHeader({
   channelMembers?: ChannelMember[];
   onlineUserIds: string[];
   connected: boolean;
-  typingLabel?: string | null;
   searchOpen?: boolean;
   onToggleSearch?: () => void;
   userId: string;
@@ -321,7 +336,6 @@ export function ChatConversationHeader({
         channels={channels}
         channelMembers={channelMembers}
         onlineUserIds={onlineUserIds}
-        typingLabel={typingLabel}
         searchOpen={searchOpen}
         onToggleSearch={onToggleSearch}
         userId={userId}
@@ -345,7 +359,6 @@ export function ChatPopupHeader({
   channelMembers,
   onlineUserIds,
   connected,
-  typingLabel,
   minimized,
   searchOpen,
   onToggleMinimize,
@@ -362,7 +375,6 @@ export function ChatPopupHeader({
   channelMembers?: ChannelMember[];
   onlineUserIds: string[];
   connected: boolean;
-  typingLabel?: string | null;
   minimized: boolean;
   searchOpen?: boolean;
   onToggleMinimize: () => void;
@@ -383,7 +395,6 @@ export function ChatPopupHeader({
             channels={channels}
             channelMembers={channelMembers}
             onlineUserIds={onlineUserIds}
-            typingLabel={typingLabel}
             searchOpen={searchOpen}
             onToggleSearch={onToggleSearch}
             userId={userId}

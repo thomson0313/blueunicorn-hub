@@ -21,16 +21,20 @@ export function FloatingChat() {
   const [popupTarget, setPopupTarget] = useState<string | null>(null);
   const [popupMinimized, setPopupMinimized] = useState(false);
   const [popupHeader, setPopupHeader] = useState<{
-    typingLabel: string | null;
-    channelMembers: { name: string; avatarUrl?: string | null }[];
-  }>({ typingLabel: null, channelMembers: [] });
+    channelMembers: {
+      userId: string;
+      name: string;
+      username: string | null;
+      avatarUrl?: string | null;
+    }[];
+  }>({ channelMembers: [] });
   const [searchOpen, setSearchOpen] = useState(false);
 
   function openConversation(target: string) {
     setPopupTarget(target);
     setPopupMinimized(false);
     setSearchOpen(false);
-    setPopupHeader({ typingLabel: null, channelMembers: [] });
+    setPopupHeader({ channelMembers: [] });
   }
 
   const hideFab = pathname === "/chat";
@@ -72,7 +76,6 @@ export function FloatingChat() {
             channelMembers={popupHeader.channelMembers}
             onlineUserIds={onlineUserIds}
             connected={connected}
-            typingLabel={popupHeader.typingLabel}
             minimized={popupMinimized}
             searchOpen={searchOpen}
             userId={user.sub}
@@ -82,7 +85,7 @@ export function FloatingChat() {
               setPopupTarget(null);
               setPopupMinimized(false);
               setSearchOpen(false);
-              setPopupHeader({ typingLabel: null, channelMembers: [] });
+              setPopupHeader({ channelMembers: [] });
             }}
             onToggleSearch={() => setSearchOpen((o) => !o)}
             onChannelUpdated={() => void refresh()}
