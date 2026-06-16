@@ -1,4 +1,5 @@
 import { findProjectById, findUserById, listUsers, newId, nowISO } from "@/lib/repo";
+import { broadcastHubNotification, getSocketIo } from "@/lib/hub-socket";
 import { getSupabase } from "@/lib/supabase";
 
 export type HubNotificationType = "project_update" | "comment";
@@ -53,15 +54,30 @@ export async function createHubNotification(data: {
   body: string;
   projectId?: string | null;
 }): Promise<void> {
+  const id = newId();
+  const createdAt = nowISO();
   await getSupabase().from("hub_notifications").insert({
-    id: newId(),
+    id,
     user_id: data.userId,
     type: data.type,
     title: data.title,
     body: data.body,
     project_id: data.projectId ?? null,
-    created_at: nowISO(),
+    created_at: createdAt,
   });
+
+  const io = getSocketIo();
+  if (io) {
+    broadcastHubNotification(io, data.userId, {
+      _id: id,
+      type: data.type,
+      title: data.title,
+      body: data.body,
+      projectId: data.projectId ?? null,
+      read: false,
+      createdAt,
+    });
+  }
 }
 
 export async function notifyProjectActivity(

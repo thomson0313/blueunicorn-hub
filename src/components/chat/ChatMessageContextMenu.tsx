@@ -64,7 +64,7 @@ export function ChatMessageContextMenu({
 
   const items = [
     { label: "Reply", action: onReply },
-    ...(mine && hasText && !hasAttachments ? [{ label: "Edit", action: onEdit }] : []),
+    ...(mine && hasText ? [{ label: "Edit", action: onEdit }] : []),
     ...(mine ? [{ label: "Delete", action: onDelete }] : []),
     ...(hasText ? [{ label: "Copy text", action: onCopy }] : []),
     ...(hasImage && onCopyImage ? [{ label: "Copy image", action: onCopyImage }] : []),

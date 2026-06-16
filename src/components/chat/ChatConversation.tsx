@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp, useRealtimeMode } from "@/components/AppProvider";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ChatComposer, type OutgoingAttachment } from "@/components/chat/ChatComposer";
+import { ChatComposer, type ChatComposerHandle, type OutgoingAttachment } from "@/components/chat/ChatComposer";
 import { ChatConversationHeader } from "@/components/chat/ChatConversationHeader";
 import { ChannelCreatedBanner, type ChannelMeta } from "@/components/chat/ChannelCreatedBanner";
 import { ChatMessageBubble } from "@/components/chat/ChatMessageBubble";
@@ -73,6 +73,9 @@ export function ChatConversation({
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [panelDragOver, setPanelDragOver] = useState(false);
+
+  const composerRef = useRef<ChatComposerHandle>(null);
 
   const searchOpen = searchOpenProp ?? searchOpenLocal;
   const setSearchOpen = onSearchOpenChange ?? setSearchOpenLocal;
@@ -634,7 +637,30 @@ export function ChatConversation({
         </div>
       )}
 
-      <div className="relative flex-1 min-h-0">
+      <div
+        className="relative flex-1 min-h-0"
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          setPanelDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          setPanelDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setPanelDragOver(false);
+          if (e.dataTransfer.files.length) {
+            void composerRef.current?.uploadFiles(e.dataTransfer.files);
+          }
+        }}
+      >
+        {panelDragOver && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-brand-500/10 border-2 border-dashed border-brand-400 rounded-lg m-2 pointer-events-none">
+            <p className="text-sm font-medium text-brand-700">Drop files to attach</p>
+          </div>
+        )}
         <div
           ref={scrollRef}
           onScroll={handleScroll}
@@ -704,6 +730,7 @@ export function ChatConversation({
       </div>
 
       <ChatComposer
+        ref={composerRef}
         placeholder={`Message ${label}`}
         canSend={connected}
         draft={chatDrafts[target] ?? ""}

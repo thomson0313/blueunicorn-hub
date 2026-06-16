@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ChatAttachmentPreviewModal } from "@/components/chat/ChatAttachmentPreviewModal";
 import { ChatEmojiAutocomplete, ChatEmojiPicker } from "@/components/chat/ChatEmojiPicker";
 import { isImageMime } from "@/lib/chat-attachment-utils";
@@ -15,16 +15,11 @@ export type OutgoingAttachment = {
   fileSize: number;
 };
 
-export function ChatComposer({
-  placeholder,
-  canSend = true,
-  draft,
-  onDraftChange,
-  replyTo,
-  onCancelReply,
-  onSend,
-  onActivity,
-}: {
+export type ChatComposerHandle = {
+  uploadFiles: (files: FileList | File[]) => Promise<void>;
+};
+
+export const ChatComposer = forwardRef<ChatComposerHandle, {
   placeholder: string;
   canSend?: boolean;
   draft: string;
@@ -33,7 +28,16 @@ export function ChatComposer({
   onCancelReply?: () => void;
   onSend: (payload: { content: string; attachments: OutgoingAttachment[] }) => Promise<void>;
   onActivity?: () => void;
-}) {
+}>(function ChatComposer({
+  placeholder,
+  canSend = true,
+  draft,
+  onDraftChange,
+  replyTo,
+  onCancelReply,
+  onSend,
+  onActivity,
+}, ref) {
   const [attachments, setAttachments] = useState<OutgoingAttachment[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -81,6 +85,8 @@ export function ChatComposer({
       }
     }
   }, []);
+
+  useImperativeHandle(ref, () => ({ uploadFiles }), [uploadFiles]);
 
   async function handleSend() {
     if (!hasContent || sending || recording || !canSend) return;
@@ -404,4 +410,4 @@ export function ChatComposer({
       )}
     </div>
   );
-}
+});

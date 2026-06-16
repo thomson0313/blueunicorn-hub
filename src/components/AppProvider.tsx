@@ -46,7 +46,9 @@ const REALTIME_MODE: RealtimeMode =
   process.env.NEXT_PUBLIC_REALTIME_MODE === "polling" ? "polling" : "socket";
 
 const ALERT_POLL_MS = 15_000;
+const ALERT_POLL_SOCKET_MS = 60_000;
 const HUB_NOTIF_POLL_MS = 5_000;
+const HUB_NOTIF_SOCKET_FALLBACK_MS = 120_000;
 
 export function AppProvider({
   user,
@@ -161,7 +163,10 @@ export function AppProvider({
     };
 
     pollAlerts();
-    const timer = setInterval(pollAlerts, ALERT_POLL_MS);
+    const timer = setInterval(
+      pollAlerts,
+      REALTIME_MODE === "socket" ? ALERT_POLL_SOCKET_MS : ALERT_POLL_MS
+    );
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -192,6 +197,10 @@ export function AppProvider({
     s.on("channel:message", (m: ChatMessage) => {
       const key = m.channelId ? `channel:${m.channelId}` : "general";
       bumpUnread(key, m.sender._id === user.sub);
+    });
+    s.on("hub:notification", () => {
+      if (hubPollReadyRef.current) playMessageChime();
+      setHubUnreadCount((c) => c + 1);
     });
 
     return () => {
@@ -268,7 +277,7 @@ export function AppProvider({
     }
   }, [emailVerified]);
 
-  // Hub notifications — poll like chat inbox for near-instant badge + chime.
+  // Hub notifications — socket push on custom server; HTTP poll on serverless / fallback.
   useEffect(() => {
     if (!emailVerified) return;
     let cancelled = false;
@@ -294,7 +303,18 @@ export function AppProvider({
       }
     };
 
-    void refreshHubNotifications();
+    void refreshHubNotifications().then(() => {
+      hubPollReadyRef.current = true;
+    });
+
+    if (REALTIME_MODE === "socket") {
+      const timer = setInterval(pollHub, HUB_NOTIF_SOCKET_FALLBACK_MS);
+      return () => {
+        cancelled = true;
+        clearInterval(timer);
+      };
+    }
+
     pollHub();
     const timer = setInterval(pollHub, HUB_NOTIF_POLL_MS);
     return () => {

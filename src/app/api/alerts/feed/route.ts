@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { deliverDueAlerts, listDeliveredAlertsSince } from "@/lib/repo";
+import { getSocketIo } from "@/lib/hub-socket";
 import { requireUser, handleError } from "@/lib/api-guard";
 
 // GET /api/alerts/feed?since=<iso> — marks due alerts as delivered and returns new ones for the client.
@@ -10,7 +11,18 @@ export async function GET(req: Request) {
     await connectDB();
 
     const since = new URL(req.url).searchParams.get("since") || "1970-01-01T00:00:00.000Z";
-    await deliverDueAlerts();
+    const newlyDelivered = await deliverDueAlerts();
+    const io = getSocketIo();
+    if (io) {
+      for (const a of newlyDelivered) {
+        io.emit("alert:new", {
+          _id: a._id,
+          title: a.title,
+          content: a.content,
+          scheduledAt: a.scheduledAt,
+        });
+      }
+    }
     const alerts = await listDeliveredAlertsSince(since);
     return NextResponse.json({
       alerts: alerts.map((a) => ({

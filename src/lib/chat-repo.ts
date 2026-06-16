@@ -694,20 +694,45 @@ export async function getMessageById(messageId: string): Promise<ExtendedMessage
 export async function listConversationPreviews(userId: string): Promise<ConversationPreview[]> {
   const sb = getSupabase();
   const allUsers = await listUsers();
-  const users = await listUsersExcept(userId);
+  const users = allUsers.filter((u) => u._id !== userId);
+  const userMap = new Map(allUsers.map((u) => [u._id, u]));
   const channels = await listAccessibleChannels(userId);
 
   const previews: ConversationPreview[] = [];
 
-  // General
-  const { data: generalLast } = await sb
-    .from("messages")
-    .select("content, created_at, sender")
-    .eq("channel_type", "general")
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [generalRes, dmRes, channelMsgsRes] = await Promise.all([
+    sb
+      .from("messages")
+      .select("content, created_at, sender")
+      .eq("channel_type", "general")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    sb
+      .from("messages")
+      .select("content, created_at, sender, recipient, dm_key")
+      .eq("channel_type", "dm")
+      .is("deleted_at", null)
+      .or(`sender.eq.${userId},recipient.eq.${userId}`)
+      .order("created_at", { ascending: false })
+      .limit(500),
+    channels.length
+      ? sb
+          .from("messages")
+          .select("content, created_at, sender, channel_id")
+          .eq("channel_type", "channel")
+          .in(
+            "channel_id",
+            channels.map((c) => c._id)
+          )
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(500)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const generalLast = generalRes.data;
   previews.push({
     key: "general",
     target: "general",
@@ -715,24 +740,14 @@ export async function listConversationPreviews(userId: string): Promise<Conversa
     title: "General",
     lastMessage: generalLast?.content,
     lastSenderName: generalLast?.sender
-      ? allUsers.find((u) => u._id === generalLast.sender)?.name
+      ? userMap.get(generalLast.sender)?.name
       : undefined,
     lastAt: generalLast?.created_at,
   });
 
-  // DMs — one query for all messages involving user, group client-side
-  const { data: dmRows } = await sb
-    .from("messages")
-    .select("content, created_at, sender, recipient, dm_key")
-    .eq("channel_type", "dm")
-    .is("deleted_at", null)
-    .or(`sender.eq.${userId},recipient.eq.${userId}`)
-    .order("created_at", { ascending: false })
-    .limit(500);
   const dmByPeer = new Map<string, { content: string; created_at: string; sender: string }>();
-  for (const row of dmRows || []) {
-    const peer =
-      row.sender === userId ? row.recipient : row.sender;
+  for (const row of dmRes.data || []) {
+    const peer = row.sender === userId ? row.recipient : row.sender;
     if (!peer || dmByPeer.has(peer)) continue;
     dmByPeer.set(peer, row);
   }
@@ -745,31 +760,27 @@ export async function listConversationPreviews(userId: string): Promise<Conversa
       title: u.name,
       subtitle: u.email,
       lastMessage: last?.content,
-      lastSenderName: last ? allUsers.find((x) => x._id === last.sender)?.name : undefined,
+      lastSenderName: last ? userMap.get(last.sender)?.name : undefined,
       lastAt: last?.created_at,
       avatarName: u.name,
       avatarUrl: u.avatarUrl,
     });
   }
 
-  // Custom channels
+  const channelLastById = new Map<string, { content: string; created_at: string; sender: string }>();
+  for (const row of channelMsgsRes.data || []) {
+    if (!row.channel_id || channelLastById.has(row.channel_id)) continue;
+    channelLastById.set(row.channel_id, row);
+  }
   for (const ch of channels) {
-    const { data: last } = await sb
-      .from("messages")
-      .select("content, created_at, sender")
-      .eq("channel_type", "channel")
-      .eq("channel_id", ch._id)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const last = channelLastById.get(ch._id);
     previews.push({
       key: `channel:${ch._id}`,
       target: `channel:${ch._id}`,
       kind: "channel",
       title: ch.name,
       lastMessage: last?.content,
-      lastSenderName: last ? allUsers.find((u) => u._id === last.sender)?.name : undefined,
+      lastSenderName: last ? userMap.get(last.sender)?.name : undefined,
       lastAt: last?.created_at,
       visibility: ch.visibility,
     });

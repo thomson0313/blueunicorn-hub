@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { Avatar } from "@/components/Avatar";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { DeliveryStatusIcon } from "@/components/chat/DeliveryStatusIcon";
+import { isImageMime } from "@/lib/chat-attachment-utils";
+import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { formatMessageTime } from "@/lib/chat-format";
 import type { ChatMessage } from "@/lib/types";
 
@@ -38,6 +40,9 @@ export function ChatMessageBubble({
   onReaction?: (emoji: string) => void;
   currentUserId: string;
 }) {
+  const editRef = useRef<HTMLTextAreaElement>(null);
+  const attachments = message.attachments || [];
+
   const groupedReactions = useMemo(() => {
     const map = new Map<string, { count: number; mine: boolean }>();
     for (const r of message.reactions || []) {
@@ -48,6 +53,14 @@ export function ChatMessageBubble({
     }
     return map;
   }, [message.reactions, currentUserId]);
+
+  useEffect(() => {
+    if (!editing) return;
+    const ta = editRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 480)}px`;
+  }, [editDraft, editing]);
 
   return (
     <div
@@ -75,16 +88,38 @@ export function ChatMessageBubble({
           {editing ? (
             <div className="space-y-2 min-w-0">
               <textarea
+                ref={editRef}
                 value={editDraft ?? ""}
                 onChange={(e) => onEditDraftChange?.(e.target.value)}
-                rows={2}
-                className={`w-full min-w-0 max-w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none resize-none break-words ${
+                rows={1}
+                className={`w-full min-w-0 max-w-full text-sm leading-relaxed whitespace-pre-wrap resize-none focus:outline-none bg-transparent overflow-hidden ${
                   mine
-                    ? "bg-white/95 text-slate-900 border border-white/40 placeholder:text-slate-400"
-                    : "bg-slate-50 text-slate-900 border border-slate-300"
+                    ? "text-white placeholder:text-white/50 caret-white"
+                    : "text-slate-800 placeholder:text-slate-400"
                 }`}
                 autoFocus
               />
+              {attachments.length > 0 && (
+                <div className={`space-y-1.5 pt-1 border-t ${mine ? "border-white/20" : "border-slate-200"}`}>
+                  {attachments.map((att) => (
+                    <div key={att._id} className="flex items-center gap-2 min-w-0 opacity-90">
+                      {isImageMime(att.mimeType) ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={resolveChatAttachmentUrl(att.fileUrl)}
+                          alt={att.fileName}
+                          className="h-10 w-10 rounded object-cover shrink-0"
+                        />
+                      ) : (
+                        <span className="h-10 w-10 rounded bg-black/10 flex items-center justify-center shrink-0 text-xs">
+                          📎
+                        </span>
+                      )}
+                      <span className="text-xs truncate">{att.fileName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
