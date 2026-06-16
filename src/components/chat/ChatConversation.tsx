@@ -9,6 +9,14 @@ import { ChannelCreatedBanner, type ChannelMeta } from "@/components/chat/Channe
 import { ChatMessageBubble } from "@/components/chat/ChatMessageBubble";
 import { ChatMessageContextMenu } from "@/components/chat/ChatMessageContextMenu";
 import { dmConversationKey, parseChatTarget, targetLabel } from "@/lib/chat-target";
+import { closeAllChatContextMenus } from "@/lib/chat-context-menu";
+import {
+  getConversationCache,
+  patchCachedMessage,
+  removeCachedMessage,
+  setConversationCache,
+} from "@/lib/chat-conversation-cache";
+import { messageToPreviewTarget } from "@/lib/chat-preview-sync";
 import { formatTypingLabel } from "@/lib/chat-typing";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { downloadChatAttachment } from "@/lib/chat-attachment-actions";
@@ -44,7 +52,7 @@ export function ChatConversation({
     channelMembers: { name: string; avatarUrl?: string | null }[];
   }) => void;
 }) {
-  const { user, socket, socketConnected, avatarUrl, onlineUserIds, setActiveConversation, clearUnread } = useApp();
+  const { user, socket, socketConnected, avatarUrl, onlineUserIds, setActiveConversation, clearUnread, chatDrafts, setChatDraft } = useApp();
   const realtimeMode = useRealtimeMode();
   const connected = realtimeMode === "polling" || socketConnected;
 
@@ -74,8 +82,26 @@ export function ChatConversation({
   const atBottomRef = useRef(true);
   const typingUsersRef = useRef<Map<string, { name: string; timer: number }>>(new Map());
   const lastMessageAtRef = useRef<string | null>(null);
-  const typingTimerRef = useRef<number | null>(null);
+  const typingEmitRef = useRef<number | null>(null);
+  const targetRef = useRef(target);
+  const messagesRef = useRef(messages);
+  const peerReadAtRef = useRef(peerReadAt);
+  const channelMetaRef = useRef(channelMeta);
+  const channelMembersRef = useRef(channelMembers);
   const parsed = parseChatTarget(target);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    peerReadAtRef.current = peerReadAt;
+  }, [peerReadAt]);
+  useEffect(() => {
+    channelMetaRef.current = channelMeta;
+  }, [channelMeta]);
+  useEffect(() => {
+    channelMembersRef.current = channelMembers;
+  }, [channelMembers]);
 
   const convKey =
     parsed.kind === "general"
@@ -99,6 +125,18 @@ export function ChatConversation({
   );
 
   const loadHistory = useCallback(async () => {
+    const cached = getConversationCache(target);
+    if (cached) {
+      setMessages(cached.messages);
+      setPeerReadAt(cached.peerReadAt);
+      setChannelMeta(cached.channelMeta);
+      setChannelMembers(cached.channelMembers);
+      lastMessageAtRef.current = cached.lastMessageAt;
+      setLoading(false);
+      if (cached.messages.length) markRead(cached.messages[cached.messages.length - 1].createdAt);
+      return;
+    }
+
     setLoading(true);
     const res = await fetch(`/api/messages?target=${encodeURIComponent(target)}`);
     const data = await res.json();
@@ -117,21 +155,53 @@ export function ChatConversation({
     lastMessageAtRef.current = list.length > 0 ? list[list.length - 1].createdAt : null;
     setLoading(false);
     if (list.length) markRead(list[list.length - 1].createdAt);
+
+    setConversationCache(target, {
+      messages: list,
+      peerReadAt: data.peerReadAt ?? null,
+      channelMeta: (data.channelMeta as ChannelMeta) ?? null,
+      channelMembers:
+        (data.channelMembers as { name: string; avatarUrl?: string | null }[]) || [],
+      lastMessageAt: lastMessageAtRef.current,
+    });
   }, [target, markRead]);
 
   useEffect(() => {
+    const prevTarget = targetRef.current;
+    if (prevTarget !== target) {
+      setConversationCache(prevTarget, {
+        messages: messagesRef.current,
+        peerReadAt: peerReadAtRef.current,
+        channelMeta: channelMetaRef.current,
+        channelMembers: channelMembersRef.current,
+        lastMessageAt: lastMessageAtRef.current,
+      });
+      targetRef.current = target;
+    }
+
     void loadHistory();
     setReplyTo(null);
     setEditId(null);
     setEditDraft("");
     setSearchQuery("");
+    setMenu(null);
     typingUsersRef.current.forEach((v) => window.clearTimeout(v.timer));
     typingUsersRef.current.clear();
     setTypingLabel(null);
     onTypingChange?.(null);
     atBottomRef.current = true;
     setShowScrollDown(false);
-  }, [loadHistory, onTypingChange]);
+
+    return () => {
+      setConversationCache(target, {
+        messages: messagesRef.current,
+        peerReadAt: peerReadAtRef.current,
+        channelMeta: channelMetaRef.current,
+        channelMembers: channelMembersRef.current,
+        lastMessageAt: lastMessageAtRef.current,
+      });
+    };
+  }, [target, loadHistory, onTypingChange]);
 
   useEffect(() => {
     setActiveConversation(target);
@@ -154,10 +224,12 @@ export function ChatConversation({
       return [...prev, msg];
     });
     lastMessageAtRef.current = msg.createdAt;
+    patchCachedMessage(targetRef.current, msg);
   }, []);
 
   const removeMessage = useCallback((messageId: string) => {
     setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    removeCachedMessage(targetRef.current, messageId);
     onMessageDeleted?.();
   }, [onMessageDeleted]);
 
@@ -191,16 +263,31 @@ export function ChatConversation({
       recipient?: string;
       senderId: string;
     }) => {
-      if (!matchMessageDelete(payload)) return;
+      if (!matchMessageDelete(payload)) {
+        let t = "general";
+        if (payload.channelType === "channel" && payload.channelId) {
+          t = `channel:${payload.channelId}`;
+        } else if (payload.channelType === "dm") {
+          t = payload.senderId === user.sub ? payload.recipient || "" : payload.senderId;
+        }
+        removeCachedMessage(t, payload.messageId);
+        return;
+      }
       removeMessage(payload.messageId);
     };
 
     const onUpdated = (msg: ChatMessage) => {
+      const msgTarget = messageToPreviewTarget(msg, user.sub);
       if (match(msg)) upsertMessage(msg);
+      else if (getConversationCache(msgTarget)) patchCachedMessage(msgTarget, msg);
     };
 
     const onAny = (msg: ChatMessage) => {
-      if (!match(msg)) return;
+      const msgTarget = messageToPreviewTarget(msg, user.sub);
+      if (!match(msg)) {
+        if (getConversationCache(msgTarget)) patchCachedMessage(msgTarget, msg);
+        return;
+      }
       setMessages((prev) => {
         const pendingIdx = prev.findIndex(
           (m) => m.pending && m.sender._id === user.sub && m.content === msg.content
@@ -275,6 +362,11 @@ export function ChatConversation({
     socket.on("chat:message-deleted", onDeleted);
     socket.on("chat:typing", onTyping);
     socket.on("chat:read", onRead);
+    socket.on("chat:channel-deleted", (payload: { channelId: string }) => {
+      if (parsed.kind === "channel" && parsed.channelId === payload.channelId) {
+        onChannelDeleted?.();
+      }
+    });
 
     return () => {
       socket.off("general:message", onAny);
@@ -284,6 +376,7 @@ export function ChatConversation({
       socket.off("chat:message-deleted", onDeleted);
       socket.off("chat:typing", onTyping);
       socket.off("chat:read", onRead);
+      socket.off("chat:channel-deleted");
     };
   }, [
     socket,
@@ -297,6 +390,7 @@ export function ChatConversation({
     onTypingChange,
     markRead,
     onMessageDeleted,
+    onChannelDeleted,
   ]);
 
   useEffect(() => {
@@ -343,8 +437,6 @@ export function ChatConversation({
     setShowScrollDown(false);
   }
 
-  const typingEmitRef = useRef<number | null>(null);
-
   function notifyTyping() {
     if (!socket?.connected) return;
     socket.emit("chat:typing", { target, typing: true });
@@ -383,6 +475,7 @@ export function ChatConversation({
 
     setMessages((prev) => [...prev, optimistic]);
     setReplyTo(null);
+    setChatDraft(target, "");
     notifyTyping();
 
     const body: Record<string, unknown> = {
@@ -426,13 +519,27 @@ export function ChatConversation({
   }
 
   async function reactToMessage(messageId: string, emoji: string) {
-    const res = await fetch(`/api/messages/${messageId}/reactions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emoji }),
-    });
-    const data = await res.json();
-    if (res.ok && data.message) upsertMessage(data.message);
+    const snapshot = messagesRef.current.find((m) => m._id === messageId);
+    if (snapshot) {
+      const reactions = [...(snapshot.reactions || [])];
+      const idx = reactions.findIndex((r) => r.userId === user.sub && r.emoji === emoji);
+      if (idx >= 0) reactions.splice(idx, 1);
+      else reactions.push({ emoji, userId: user.sub, userName: user.name });
+      upsertMessage({ ...snapshot, reactions });
+    }
+
+    try {
+      const res = await fetch(`/api/messages/${messageId}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      });
+      const data = await res.json();
+      if (res.ok && data.message) upsertMessage(data.message);
+      else if (snapshot) upsertMessage(snapshot);
+    } catch {
+      if (snapshot) upsertMessage(snapshot);
+    }
   }
 
   async function confirmDelete() {
@@ -496,7 +603,7 @@ export function ChatConversation({
   );
 
   return (
-    <section className={`flex flex-col min-h-0 bg-white ${className}`}>
+    <section className={`flex flex-col min-h-0 min-w-0 overflow-x-hidden bg-white ${className}`}>
       {showHeader && (
         <ChatConversationHeader
           target={target}
@@ -531,7 +638,7 @@ export function ChatConversation({
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="absolute inset-0 overflow-y-auto p-4 space-y-3 tg-chat-bg"
+          className="absolute inset-0 overflow-y-auto overflow-x-hidden p-4 space-y-3 tg-chat-bg min-w-0"
         >
           {loading ? (
             <div className="flex items-center justify-center py-16">
@@ -566,7 +673,11 @@ export function ChatConversation({
                         setEditId(null);
                         setEditDraft("");
                       }}
-                      onContextMenu={(e, msg) => setMenu({ x: e.clientX, y: e.clientY, message: msg })}
+                      onContextMenu={(e, msg) => {
+                        e.preventDefault();
+                        closeAllChatContextMenus();
+                        setMenu({ x: e.clientX, y: e.clientY, message: msg });
+                      }}
                       onReaction={(emoji) => void reactToMessage(m._id, emoji)}
                       currentUserId={user.sub}
                     />
@@ -595,6 +706,8 @@ export function ChatConversation({
       <ChatComposer
         placeholder={`Message ${label}`}
         canSend={connected}
+        draft={chatDrafts[target] ?? ""}
+        onDraftChange={(text) => setChatDraft(target, text)}
         replyTo={
           replyTo
             ? { senderName: replyTo.sender.name, content: replyTo.content }

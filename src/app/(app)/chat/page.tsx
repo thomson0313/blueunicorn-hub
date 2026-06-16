@@ -1,35 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ChatConversation } from "@/components/chat/ChatConversation";
 import { ChatRightSidebar } from "@/components/chat/ChatRightSidebar";
 import { PanelLoader } from "@/components/PanelLoader";
 import { useApp } from "@/components/AppProvider";
-import type { ChatChannel, ChatConversationPreview, PublicUser } from "@/lib/types";
+import { useChatSidebar } from "@/hooks/useChatSidebar";
 
 export default function ChatPage() {
-  const { onlineUserIds, unread } = useApp();
-  const [users, setUsers] = useState<PublicUser[]>([]);
-  const [channels, setChannels] = useState<ChatChannel[]>([]);
-  const [previews, setPreviews] = useState<ChatConversationPreview[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { onlineUserIds, unread, chatDrafts } = useApp();
+  const { users, channels, previews, loading, refresh } = useChatSidebar();
   const [target, setTarget] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    const [usersRes, channelsRes] = await Promise.all([
-      fetch("/api/users"),
-      fetch("/api/chat/channels"),
-    ]);
-    const usersData = await usersRes.json();
-    const channelsData = await channelsRes.json();
-    setUsers(usersData.users || []);
-    setChannels(channelsData.channels || []);
-    setPreviews(channelsData.previews || []);
-  }, []);
-
-  useEffect(() => {
-    void refresh().finally(() => setLoading(false));
-  }, [refresh]);
 
   if (loading) {
     return <PanelLoader variant="chat" />;
@@ -44,7 +25,6 @@ export default function ChatPage() {
             users={users}
             channels={channels}
             className="flex-1"
-            onMessageDeleted={() => void refresh()}
             onChannelUpdated={() => void refresh()}
             onChannelDeleted={() => setTarget(null)}
           />
@@ -65,6 +45,7 @@ export default function ChatPage() {
         previews={previews}
         onlineUserIds={onlineUserIds}
         unread={unread}
+        chatDrafts={chatDrafts}
         activeTarget={target}
         onSelect={setTarget}
         onRefresh={() => void refresh()}

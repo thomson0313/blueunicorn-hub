@@ -13,6 +13,7 @@ import {
 } from "@/lib/chat-attachment-utils";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { splitMessageContent } from "@/lib/chat-format";
+import { closeAllChatContextMenus } from "@/lib/chat-context-menu";
 import type { ChatMessage } from "@/lib/types";
 
 export function ChatMessageContent({
@@ -43,16 +44,16 @@ export function ChatMessageContent({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 min-w-0 max-w-full overflow-hidden">
       {message.replyTo && (
         <div
-          className={`text-xs rounded-lg px-2 py-1 border-l-2 ${
+          className={`text-xs rounded-lg px-2 py-1 border-l-2 min-w-0 ${
             mine ? "border-white/60 bg-white/10" : "border-brand-400 bg-slate-50"
           }`}
         >
           <div className="font-semibold opacity-80">{message.replyTo.senderName}</div>
           {message.replyTo.content ? (
-            <div className="opacity-70 truncate">{message.replyTo.content}</div>
+            <div className="opacity-70 break-words whitespace-pre-wrap">{message.replyTo.content}</div>
           ) : null}
         </div>
       )}
@@ -86,6 +87,7 @@ export function ChatMessageContent({
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            closeAllChatContextMenus();
             setAttachmentMenu({ x: e.clientX, y: e.clientY, attachment: att });
           }}
         />

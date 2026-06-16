@@ -108,6 +108,27 @@ export function broadcastMessageDeleted(
   io.emit("chat:message-deleted", payload);
 }
 
+export function broadcastChannelCreated(
+  io: SocketIOServer,
+  payload: {
+    channel: { _id: string; name: string; visibility: "public" | "private"; createdBy: string; createdAt: string };
+    memberIds?: string[];
+  }
+) {
+  io.emit("chat:channel-created", payload);
+}
+
+export function broadcastChannelUpdated(
+  io: SocketIOServer,
+  payload: { channelId: string; name: string; visibility: "public" | "private" }
+) {
+  io.emit("chat:channel-updated", payload);
+}
+
+export function broadcastChannelDeleted(io: SocketIOServer, payload: { channelId: string }) {
+  io.emit("chat:channel-deleted", payload);
+}
+
 function normalizeAttachments(raw: unknown[] | undefined) {
   if (!raw?.length) return [];
   return raw

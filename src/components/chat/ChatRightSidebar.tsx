@@ -19,6 +19,7 @@ export function ChatRightSidebar({
   previews,
   onlineUserIds,
   unread,
+  chatDrafts = {},
   activeTarget,
   onSelect,
   onRefresh,
@@ -31,6 +32,7 @@ export function ChatRightSidebar({
   previews: ChatConversationPreview[];
   onlineUserIds: string[];
   unread: Record<string, number>;
+  chatDrafts?: Record<string, string>;
   activeTarget: string | null;
   onSelect: (target: string) => void;
   onRefresh: () => void;
@@ -157,12 +159,18 @@ export function ChatRightSidebar({
             dmItems.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-8">No conversations</p>
             ) : (
-              dmItems.map((item) => (
+              dmItems.map((item) => {
+                const draft = chatDrafts[item.target];
+                const subtitle = draft?.trim()
+                  ? `Draft: ${truncatePreview(draft, 38)}`
+                  : item.preview?.lastMessage;
+                return (
                 <ConversationRow
                   key={item.target}
                   active={activeTarget === item.target}
                   title={item.title}
-                  subtitle={item.preview?.lastMessage}
+                  subtitle={subtitle}
+                  subtitleIsDraft={!!draft?.trim()}
                   time={item.preview?.lastAt}
                   unread={unread[item.target]}
                   onClick={() => onSelect(item.target)}
@@ -170,7 +178,7 @@ export function ChatRightSidebar({
                   avatarUrl={item.avatarUrl}
                   online={item.online}
                 />
-              ))
+              );})
             )
           ) : (
             <>
@@ -181,21 +189,27 @@ export function ChatRightSidebar({
               >
                 + Create channel
               </button>
-              {channelItems.map((item) => (
+              {channelItems.map((item) => {
+                const draft = chatDrafts[item.target];
+                const previewSubtitle =
+                  item.preview?.lastSenderName && item.preview.lastMessage
+                    ? `${item.preview.lastSenderName}: ${truncatePreview(item.preview.lastMessage)}`
+                    : item.preview?.lastMessage;
+                const subtitle = draft?.trim()
+                  ? `Draft: ${truncatePreview(draft, 38)}`
+                  : previewSubtitle;
+                return (
                 <ConversationRow
                   key={item.target}
                   active={activeTarget === item.target}
                   title={item.visibility === "private" ? `🔒 ${item.title}` : `# ${item.title}`}
-                  subtitle={
-                    item.preview?.lastSenderName && item.preview.lastMessage
-                      ? `${item.preview.lastSenderName}: ${truncatePreview(item.preview.lastMessage)}`
-                      : item.preview?.lastMessage
-                  }
+                  subtitle={subtitle}
+                  subtitleIsDraft={!!draft?.trim()}
                   time={item.preview?.lastAt}
                   unread={unread[item.target]}
                   onClick={() => onSelect(item.target)}
                 />
-              ))}
+              );})}
             </>
           )}
         </div>
@@ -245,6 +259,7 @@ function ConversationRow({
   active,
   title,
   subtitle,
+  subtitleIsDraft,
   time,
   unread,
   onClick,
@@ -255,6 +270,7 @@ function ConversationRow({
   active: boolean;
   title: string;
   subtitle?: string;
+  subtitleIsDraft?: boolean;
   time?: string;
   unread?: number;
   onClick: () => void;
@@ -292,7 +308,9 @@ function ConversationRow({
           )}
         </div>
         {subtitle && (
-          <p className="text-xs text-slate-500 truncate mt-0.5">{truncatePreview(subtitle, 42)}</p>
+          <p className={`text-xs truncate mt-0.5 ${subtitleIsDraft ? "text-brand-600 italic" : "text-slate-500"}`}>
+            {truncatePreview(subtitle, 42)}
+          </p>
         )}
       </div>
       {(unread || 0) > 0 && (

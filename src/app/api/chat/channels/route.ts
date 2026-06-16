@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Server as SocketIOServer } from "socket.io";
 import { z } from "zod";
 import { connectDB } from "@/lib/db";
 import {
@@ -6,7 +7,12 @@ import {
   listAccessibleChannels,
   listConversationPreviews,
 } from "@/lib/chat-repo";
+import { broadcastChannelCreated } from "@/lib/chat-socket";
 import { requireUser, handleError, HttpError } from "@/lib/api-guard";
+
+function getIo() {
+  return (globalThis as unknown as { _io?: SocketIOServer })._io;
+}
 
 const createSchema = z.object({
   name: z.string().min(1).max(80),
@@ -45,6 +51,19 @@ export async function POST(req: Request) {
       throw new HttpError(400, "Private channels require at least one member");
     }
     const channel = await createChatChannel(me.sub, name, visibility, memberIds || []);
+    const io = getIo();
+    if (io) {
+      broadcastChannelCreated(io, {
+        channel: {
+          _id: channel._id,
+          name: channel.name,
+          visibility: channel.visibility,
+          createdBy: channel.createdBy,
+          createdAt: channel.createdAt,
+        },
+        memberIds: visibility === "private" ? [me.sub, ...(memberIds || [])] : undefined,
+      });
+    }
     return NextResponse.json({ channel }, { status: 201 });
   } catch (err) {
     return handleError(err);

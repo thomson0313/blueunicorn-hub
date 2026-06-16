@@ -26,6 +26,8 @@ type AppContextValue = {
   setAvatarUrl: (url: string | null) => void;
   unread: Record<string, number>;
   totalUnread: number;
+  chatDrafts: Record<string, string>;
+  setChatDraft: (target: string, text: string) => void;
   setActiveConversation: (id: string | null) => void;
   clearUnread: (id: string) => void;
   hubUnreadCount: number;
@@ -81,6 +83,7 @@ export function AppProvider({
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [unread, setUnread] = useState<Record<string, number>>({});
+  const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
   const activeConvRef = useRef<string | null>(null);
   const alertsSinceRef = useRef(new Date().toISOString());
   const hubSinceRef = useRef(new Date().toISOString());
@@ -309,6 +312,19 @@ export function AppProvider({
     setUnread((prev) => (prev[id] ? { ...prev, [id]: 0 } : prev));
   }, []);
 
+  const setChatDraft = useCallback((target: string, text: string) => {
+    setChatDrafts((prev) => {
+      if (!text.trim()) {
+        if (!(target in prev)) return prev;
+        const next = { ...prev };
+        delete next[target];
+        return next;
+      }
+      if (prev[target] === text) return prev;
+      return { ...prev, [target]: text };
+    });
+  }, []);
+
   useEffect(() => {
     const unlock = () => unlockAudio();
     window.addEventListener("pointerdown", unlock, { once: true });
@@ -342,6 +358,8 @@ export function AppProvider({
       setAvatarUrl,
       unread,
       totalUnread,
+      chatDrafts,
+      setChatDraft,
       setActiveConversation,
       clearUnread,
       hubUnreadCount,
@@ -359,6 +377,8 @@ export function AppProvider({
       avatarUrl,
       unread,
       totalUnread,
+      chatDrafts,
+      setChatDraft,
       setActiveConversation,
       clearUnread,
       hubUnreadCount,

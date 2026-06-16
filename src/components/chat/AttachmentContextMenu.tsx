@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { anchoredPosition } from "@/lib/anchored-position";
+import { CHAT_CONTEXT_MENU_CLOSE } from "@/lib/chat-context-menu";
 import { isPreviewableMime } from "@/lib/chat-attachment-utils";
 import type { AttachmentLike } from "@/lib/chat-attachment-actions";
 
@@ -31,6 +32,14 @@ export function AttachmentContextMenu({
     const h = el?.offsetHeight || 80;
     setPos(anchoredPosition(x, y, w, h));
   }, [x, y]);
+
+  useEffect(() => {
+    function onGlobalClose() {
+      onClose();
+    }
+    window.addEventListener(CHAT_CONTEXT_MENU_CLOSE, onGlobalClose);
+    return () => window.removeEventListener(CHAT_CONTEXT_MENU_CLOSE, onGlobalClose);
+  }, [onClose]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

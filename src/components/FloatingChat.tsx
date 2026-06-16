@@ -1,20 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { useApp } from "@/components/AppProvider";
 import { ChatConversation } from "@/components/chat/ChatConversation";
 import { ChatPopupHeader } from "@/components/chat/ChatConversationHeader";
 import { ChatRightSidebar } from "@/components/chat/ChatRightSidebar";
 import { PanelLoader } from "@/components/PanelLoader";
-import type { ChatChannel, ChatConversationPreview, PublicUser } from "@/lib/types";
+import { useChatSidebar } from "@/hooks/useChatSidebar";
 
 const SIDEBAR_WIDTH = "20rem"; // w-80
 
 export function FloatingChat() {
   const pathname = usePathname();
-  const { totalUnread, onlineUserIds, unread, socketConnected, user } = useApp();
+  const { totalUnread, onlineUserIds, unread, socketConnected, user, chatDrafts } = useApp();
   const connected = socketConnected;
+  const { users, channels, previews, loading, refresh } = useChatSidebar();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [popupTarget, setPopupTarget] = useState<string | null>(null);
@@ -25,32 +26,6 @@ export function FloatingChat() {
   }>({ typingLabel: null, channelMembers: [] });
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const [users, setUsers] = useState<PublicUser[]>([]);
-  const [channels, setChannels] = useState<ChatChannel[]>([]);
-  const [previews, setPreviews] = useState<ChatConversationPreview[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const refreshLists = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [usersRes, channelsRes] = await Promise.all([
-        fetch("/api/users"),
-        fetch("/api/chat/channels"),
-      ]);
-      const usersData = await usersRes.json();
-      const channelsData = await channelsRes.json();
-      setUsers(usersData.users || []);
-      setChannels(channelsData.channels || []);
-      setPreviews(channelsData.previews || []);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshLists();
-  }, [refreshLists]);
-
   function openConversation(target: string) {
     setPopupTarget(target);
     setPopupMinimized(false);
@@ -59,7 +34,6 @@ export function FloatingChat() {
   }
 
   const hideFab = pathname === "/chat";
-
   const popupRight = sidebarOpen ? SIDEBAR_WIDTH : "1rem";
 
   return (
@@ -72,10 +46,11 @@ export function FloatingChat() {
         previews={previews}
         onlineUserIds={onlineUserIds}
         unread={unread}
+        chatDrafts={chatDrafts}
         activeTarget={popupTarget}
         loading={loading && users.length === 0}
         onSelect={openConversation}
-        onRefresh={() => void refreshLists()}
+        onRefresh={() => void refresh()}
       />
 
       {popupTarget && (
@@ -110,10 +85,10 @@ export function FloatingChat() {
               setPopupHeader({ typingLabel: null, channelMembers: [] });
             }}
             onToggleSearch={() => setSearchOpen((o) => !o)}
-            onChannelUpdated={() => void refreshLists()}
+            onChannelUpdated={() => void refresh()}
             onChannelDeleted={() => {
               setPopupTarget(null);
-              void refreshLists();
+              void refresh();
             }}
           />
           <div className={popupMinimized ? "hidden" : "flex flex-col flex-1 min-h-0"}>
@@ -129,11 +104,10 @@ export function FloatingChat() {
                 onHeaderStateChange={setPopupHeader}
                 searchOpen={searchOpen}
                 onSearchOpenChange={setSearchOpen}
-                onMessageDeleted={() => void refreshLists()}
-                onChannelUpdated={() => void refreshLists()}
+                onChannelUpdated={() => void refresh()}
                 onChannelDeleted={() => {
                   setPopupTarget(null);
-                  void refreshLists();
+                  void refresh();
                 }}
               />
             )}

@@ -51,7 +51,7 @@ export function ChatMessageBubble({
 
   return (
     <div
-      className={`flex items-end gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}
+      className={`flex items-end gap-2 min-w-0 ${mine ? "flex-row-reverse" : "flex-row"}`}
       onContextMenu={(e) => {
         if (editing) return;
         e.preventDefault();
@@ -62,23 +62,23 @@ export function ChatMessageBubble({
         <Avatar name={message.sender.name} src={avatarUrl} size={32} />
       </span>
 
-      <div className={`max-w-[78%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
+      <div className={`min-w-0 max-w-[78%] w-full ${mine ? "items-end" : "items-start"} flex flex-col`}>
         {showSender && !mine && (
           <div className="text-xs font-semibold mb-0.5 text-brand-600 px-1">{message.sender.name}</div>
         )}
 
         <div
-          className={`rounded-2xl px-3.5 py-2 shadow-sm ${
+          className={`rounded-2xl px-3.5 py-2 shadow-sm min-w-0 max-w-full overflow-hidden ${
             mine ? "bg-brand-500 text-white rounded-br-md" : "bg-white text-slate-800 rounded-bl-md"
           }`}
         >
           {editing ? (
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <textarea
                 value={editDraft ?? ""}
                 onChange={(e) => onEditDraftChange?.(e.target.value)}
                 rows={2}
-                className={`w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none resize-none ${
+                className={`w-full min-w-0 max-w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none resize-none break-words ${
                   mine
                     ? "bg-white/95 text-slate-900 border border-white/40 placeholder:text-slate-400"
                     : "bg-slate-50 text-slate-900 border border-slate-300"

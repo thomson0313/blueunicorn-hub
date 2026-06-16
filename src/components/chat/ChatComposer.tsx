@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChatAttachmentPreviewModal } from "@/components/chat/ChatAttachmentPreviewModal";
 import { ChatEmojiAutocomplete, ChatEmojiPicker } from "@/components/chat/ChatEmojiPicker";
 import { isImageMime } from "@/lib/chat-attachment-utils";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { EMOJI_SHORTCODES } from "@/lib/chat-emoji";
+import type { AttachmentLike } from "@/lib/chat-attachment-actions";
 
 export type OutgoingAttachment = {
   fileName: string;
@@ -16,6 +18,8 @@ export type OutgoingAttachment = {
 export function ChatComposer({
   placeholder,
   canSend = true,
+  draft,
+  onDraftChange,
   replyTo,
   onCancelReply,
   onSend,
@@ -23,35 +27,39 @@ export function ChatComposer({
 }: {
   placeholder: string;
   canSend?: boolean;
+  draft: string;
+  onDraftChange: (text: string) => void;
   replyTo?: { senderName: string; content: string } | null;
   onCancelReply?: () => void;
   onSend: (payload: { content: string; attachments: OutgoingAttachment[] }) => Promise<void>;
   onActivity?: () => void;
 }) {
-  const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<OutgoingAttachment[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentLike | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const cancelRecordingRef = useRef(false);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const inputBusy = uploading || sending;
+  const uploading = uploadingCount > 0;
   const hasContent = draft.trim().length > 0 || attachments.length > 0;
   const colonMatch = draft.match(/:([a-z0-9_+-]{1,})$/i);
   const colonQuery = colonMatch?.[1] || "";
 
   const uploadFiles = useCallback(async (files: FileList | File[]) => {
-    setUploading(true);
     setUploadError(null);
-    try {
-      for (const file of Array.from(files)) {
+    for (const file of Array.from(files)) {
+      setUploadingCount((c) => c + 1);
+      try {
         const fd = new FormData();
         fd.append("file", file);
         const res = await fetch("/api/chat/attachments", { method: "POST", body: fd });
@@ -66,16 +74,16 @@ export function ChatComposer({
             fileSize: data.attachment.fileSize,
           },
         ]);
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : "Upload failed");
+      } finally {
+        setUploadingCount((c) => Math.max(0, c - 1));
       }
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
     }
   }, []);
 
   async function handleSend() {
-    if (!hasContent || inputBusy || recording || !canSend) return;
+    if (!hasContent || sending || recording || !canSend) return;
     setSending(true);
     try {
       let content = draft.trim();
@@ -83,7 +91,6 @@ export function ChatComposer({
         content = content.replaceAll(`:${code}:`, emoji);
       }
       await onSend({ content, attachments });
-      setDraft("");
       setAttachments([]);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } finally {
@@ -114,6 +121,18 @@ export function ChatComposer({
     }
   }
 
+  function stopStream() {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }
+
+  function cancelRecording() {
+    cancelRecordingRef.current = true;
+    recorderRef.current?.stop();
+    stopStream();
+    setRecording(false);
+  }
+
   async function toggleVoice() {
     if (hasContent) {
       await handleSend();
@@ -125,15 +144,22 @@ export function ChatComposer({
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
       const rec = new MediaRecorder(stream);
       recorderRef.current = rec;
       chunksRef.current = [];
+      cancelRecordingRef.current = false;
       rec.ondataavailable = (ev) => {
         if (ev.data.size) chunksRef.current.push(ev.data);
       };
       rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
+        stopStream();
         setRecording(false);
+        if (cancelRecordingRef.current) {
+          cancelRecordingRef.current = false;
+          chunksRef.current = [];
+          return;
+        }
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
         await uploadFiles([file]);
@@ -164,49 +190,60 @@ export function ChatComposer({
 
   return (
     <div
-      className={`border-t border-slate-200 bg-white shrink-0 ${dragOver ? "ring-2 ring-brand-400 ring-inset" : ""}`}
+      className={`border-t border-slate-200 bg-white shrink-0 min-w-0 overflow-x-hidden ${dragOver ? "ring-2 ring-brand-400 ring-inset" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
-        if (!inputBusy && !recording) setDragOver(true);
+        if (!recording) setDragOver(true);
       }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
         e.preventDefault();
         setDragOver(false);
-        if (!inputBusy && !recording && e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
+        if (!recording && e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
       }}
     >
       {replyTo && (
-        <div className="px-3 pt-2 flex items-center justify-between gap-2 text-xs bg-slate-50 border-b border-slate-100">
-          <div className="truncate">
+        <div className="px-3 pt-2 flex items-start justify-between gap-2 text-xs bg-slate-50 border-b border-slate-100 min-w-0">
+          <div className="min-w-0 break-words">
             Replying to <span className="font-semibold">{replyTo.senderName}</span>
-            {replyTo.content ? `: ${replyTo.content.slice(0, 60)}` : null}
+            {replyTo.content ? (
+              <span className="text-slate-500">: {replyTo.content}</span>
+            ) : null}
           </div>
-          <button type="button" onClick={onCancelReply} className="text-slate-500 hover:text-slate-700 cursor-pointer">
+          <button type="button" onClick={onCancelReply} className="text-slate-500 hover:text-slate-700 cursor-pointer shrink-0">
             ×
           </button>
         </div>
       )}
 
       {attachments.length > 0 && (
-        <div className="px-3 pt-2 flex flex-wrap gap-2">
+        <div className="px-3 pt-2 flex flex-wrap gap-2 min-w-0">
           {attachments.map((a, i) => (
-            <div key={`${a.fileUrl}-${i}`} className="relative group">
+            <div key={`${a.fileUrl}-${i}`} className="relative group max-w-[140px]">
               {isImageMime(a.mimeType) ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={resolveChatAttachmentUrl(a.fileUrl)}
-                  alt={a.fileName}
-                  className="h-16 w-16 rounded-lg object-cover border border-slate-200"
-                />
+                <button
+                  type="button"
+                  onClick={() => setPreviewAttachment(a)}
+                  className="block cursor-pointer"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={resolveChatAttachmentUrl(a.fileUrl)}
+                    alt={a.fileName}
+                    className="h-16 w-full rounded-lg object-cover border border-slate-200"
+                  />
+                </button>
               ) : (
-                <div className="h-16 w-16 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400" aria-hidden>
+                <div className="h-16 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center px-2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400 shrink-0" aria-hidden>
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                   </svg>
                 </div>
               )}
+              <p className="text-[10px] text-slate-500 truncate mt-1 px-0.5" title={a.fileName}>
+                {a.fileName}
+              </p>
               <button
                 type="button"
                 onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
@@ -222,8 +259,20 @@ export function ChatComposer({
 
       {(uploading || recording) && (
         <div className="px-3 pt-2 flex items-center gap-2 text-xs text-brand-600">
-          <div className="w-3.5 h-3.5 rounded-full border-2 border-brand-200 border-t-brand-500 animate-spin" />
-          {recording ? "Recording voice message…" : "Uploading…"}
+          <div className="w-3.5 h-3.5 rounded-full border-2 border-brand-200 border-t-brand-500 animate-spin shrink-0" />
+          <span className="flex-1 min-w-0">
+            {recording ? "Recording voice message…" : "Uploading…"}
+          </span>
+          {recording && (
+            <button
+              type="button"
+              onClick={cancelRecording}
+              className="shrink-0 w-6 h-6 rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 flex items-center justify-center cursor-pointer"
+              aria-label="Cancel recording"
+            >
+              ×
+            </button>
+          )}
         </div>
       )}
 
@@ -231,26 +280,24 @@ export function ChatComposer({
         <p className="px-3 pt-2 text-xs text-red-600">{uploadError}</p>
       )}
 
-      <div className="relative p-2">
-        {colonQuery && !inputBusy && !recording && (
+      <div className="relative p-2 min-w-0">
+        {colonQuery && !recording && (
           <ChatEmojiAutocomplete
             query={colonQuery}
             onPick={(code) => {
               const emoji = EMOJI_SHORTCODES[code] || "";
               if (!emoji) return;
-              setDraft((d) => d.replace(/:([a-z0-9_+-]{1,})$/i, emoji));
+              onDraftChange(draft.replace(/:([a-z0-9_+-]{1,})$/i, emoji));
             }}
           />
         )}
 
-        <div className={`flex items-end gap-1 rounded-xl border px-2 py-1.5 ${
-          inputBusy || recording
-            ? "border-slate-200 bg-slate-50"
-            : "border-slate-300"
-        } ${inputBusy && !recording ? "opacity-60" : ""}`}>
+        <div className={`flex items-end gap-1 rounded-xl border px-2 py-1.5 min-w-0 ${
+          recording ? "border-slate-200 bg-slate-50" : "border-slate-300"
+        } ${sending ? "opacity-60" : ""}`}>
           <button
             type="button"
-            disabled={inputBusy || recording}
+            disabled={recording}
             onClick={() => fileRef.current?.click()}
             className="shrink-0 w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
             aria-label="Attach file"
@@ -275,21 +322,21 @@ export function ChatComposer({
             ref={textareaRef}
             value={draft}
             onChange={(e) => {
-              setDraft(e.target.value);
+              onDraftChange(e.target.value);
               onActivity?.();
             }}
             onKeyDown={onKeyDown}
             onPaste={handlePaste}
-            placeholder={recording ? "Recording…" : inputBusy ? "Uploading…" : placeholder}
-            disabled={inputBusy || recording}
+            placeholder={recording ? "Recording…" : placeholder}
+            disabled={recording}
             rows={1}
-            className="flex-1 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
+            className="flex-1 min-w-0 resize-none bg-transparent text-sm py-1.5 px-1 focus:outline-none disabled:opacity-50 max-h-[120px]"
           />
 
           <div className="relative shrink-0" ref={emojiRef}>
             <button
               type="button"
-              disabled={inputBusy || recording}
+              disabled={recording}
               onClick={() => setEmojiOpen((o) => !o)}
               className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-brand-600 cursor-pointer disabled:opacity-40"
               aria-label="Emoji"
@@ -301,9 +348,9 @@ export function ChatComposer({
                 <line x1="15" y1="9" x2="15.01" y2="9" />
               </svg>
             </button>
-            {emojiOpen && !inputBusy && !recording && (
+            {emojiOpen && !recording && (
               <ChatEmojiPicker
-                onPick={(emoji) => setDraft((d) => d + emoji)}
+                onPick={(emoji) => onDraftChange(draft + emoji)}
                 onClose={() => setEmojiOpen(false)}
               />
             )}
@@ -315,8 +362,8 @@ export function ChatComposer({
               recording
                 ? false
                 : hasContent
-                  ? !canSend || inputBusy
-                  : inputBusy
+                  ? !canSend || sending
+                  : sending
             }
             onClick={() => void toggleVoice()}
             className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 ${
@@ -348,6 +395,13 @@ export function ChatComposer({
         </div>
         <p className="text-[10px] text-slate-400 mt-1 px-1">Shift+Enter for new line · Paste images to attach</p>
       </div>
+
+      {previewAttachment && (
+        <ChatAttachmentPreviewModal
+          attachment={previewAttachment}
+          onClose={() => setPreviewAttachment(null)}
+        />
+      )}
     </div>
   );
 }

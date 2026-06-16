@@ -1,9 +1,10 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { anchoredPosition } from "@/lib/anchored-position";
 import { isImageMime } from "@/lib/chat-attachment-utils";
+import { CHAT_CONTEXT_MENU_CLOSE } from "@/lib/chat-context-menu";
 import { QUICK_REACTIONS } from "@/lib/chat-emoji";
 import type { ChatMessage } from "@/lib/types";
 
@@ -44,6 +45,14 @@ export function ChatMessageContextMenu({
   const hasText = !!message.content?.trim();
   const hasImage = message.attachments?.some((a) => isImageMime(a.mimeType));
 
+  useEffect(() => {
+    function onGlobalClose() {
+      onClose();
+    }
+    window.addEventListener(CHAT_CONTEXT_MENU_CLOSE, onGlobalClose);
+    return () => window.removeEventListener(CHAT_CONTEXT_MENU_CLOSE, onGlobalClose);
+  }, [onClose]);
+
   useLayoutEffect(() => {
     const el = ref.current;
     const w = el?.offsetWidth || MENU_WIDTH;
@@ -57,7 +66,7 @@ export function ChatMessageContextMenu({
     { label: "Reply", action: onReply },
     ...(mine && hasText && !hasAttachments ? [{ label: "Edit", action: onEdit }] : []),
     ...(mine ? [{ label: "Delete", action: onDelete }] : []),
-    ...(hasText && !hasAttachments ? [{ label: "Copy", action: onCopy }] : []),
+    ...(hasText ? [{ label: "Copy text", action: onCopy }] : []),
     ...(hasImage && onCopyImage ? [{ label: "Copy image", action: onCopyImage }] : []),
     ...(attachmentCount > 0 && onDownloadAttachments
       ? [
@@ -103,7 +112,7 @@ export function ChatMessageContextMenu({
             type="button"
             onClick={() => {
               item.action();
-              if (item.label !== "Delete") onClose();
+              onClose();
             }}
             className={`w-full text-left px-3 py-2 hover:bg-slate-50 cursor-pointer ${
               item.label === "Delete" ? "text-red-600" : "text-slate-700"
