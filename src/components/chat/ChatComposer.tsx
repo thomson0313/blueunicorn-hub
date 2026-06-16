@@ -106,15 +106,19 @@ export const ChatComposer = forwardRef<
     if (!hasContent || sending || recording || !canSend) return;
     setSending(true);
     setSendError(null);
-    const toSend = attachments;
+
+    let content = draft.trim();
+    for (const [code, emoji] of Object.entries(EMOJI_SHORTCODES)) {
+      content = content.replaceAll(`:${code}:`, emoji);
+    }
+
+    const attachmentsSnapshot = [...attachments];
+    for (const att of attachmentsSnapshot) revokeAttachment(att);
+    setAttachments([]);
+    onDraftChange("");
+
     try {
-      let content = draft.trim();
-      for (const [code, emoji] of Object.entries(EMOJI_SHORTCODES)) {
-        content = content.replaceAll(`:${code}:`, emoji);
-      }
-      await onSend({ content, attachments: toSend });
-      for (const att of toSend) revokeAttachment(att);
-      setAttachments([]);
+      await onSend({ content, attachments: attachmentsSnapshot });
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } catch (err) {
       setSendError(err instanceof Error ? err.message : "Failed to send message");

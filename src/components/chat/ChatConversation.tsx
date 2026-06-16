@@ -92,6 +92,7 @@ export function ChatConversation({
   const peerReadAtRef = useRef(peerReadAt);
   const channelMetaRef = useRef(channelMeta);
   const channelMembersRef = useRef(channelMembers);
+  const lastMarkedReadRef = useRef<string | null>(null);
   const parsed = parseChatTarget(target);
 
   useEffect(() => {
@@ -128,6 +129,17 @@ export function ChatConversation({
     [convKey, socket]
   );
 
+  const tryMarkReadIfViewing = useCallback(() => {
+    if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+    if (!atBottomRef.current) return;
+    const list = messagesRef.current;
+    if (!list.length) return;
+    const latest = list[list.length - 1].createdAt;
+    if (lastMarkedReadRef.current && latest <= lastMarkedReadRef.current) return;
+    lastMarkedReadRef.current = latest;
+    markRead(latest);
+  }, [markRead]);
+
   const loadHistory = useCallback(async () => {
     const cached = getConversationCache(target);
     if (cached) {
@@ -137,7 +149,6 @@ export function ChatConversation({
       setChannelMembers(cached.channelMembers);
       lastMessageAtRef.current = cached.lastMessageAt;
       setLoading(false);
-      if (cached.messages.length) markRead(cached.messages[cached.messages.length - 1].createdAt);
       return;
     }
 
@@ -158,7 +169,6 @@ export function ChatConversation({
     }
     lastMessageAtRef.current = list.length > 0 ? list[list.length - 1].createdAt : null;
     setLoading(false);
-    if (list.length) markRead(list[list.length - 1].createdAt);
 
     setConversationCache(target, {
       messages: list,
@@ -169,6 +179,10 @@ export function ChatConversation({
       lastMessageAt: lastMessageAtRef.current,
     });
   }, [target, markRead]);
+
+  useEffect(() => {
+    lastMarkedReadRef.current = null;
+  }, [target]);
 
   useEffect(() => {
     const prevTarget = targetRef.current;
@@ -313,7 +327,7 @@ export function ChatConversation({
       });
       lastMessageAtRef.current = msg.createdAt;
       if (msg.sender._id !== user.sub) {
-        markRead(msg.createdAt);
+        tryMarkReadIfViewing();
       }
     };
 
@@ -395,6 +409,7 @@ export function ChatConversation({
     removeMessage,
     onTypingChange,
     markRead,
+    tryMarkReadIfViewing,
     onMessageDeleted,
     onChannelDeleted,
   ]);
@@ -426,8 +441,19 @@ export function ChatConversation({
   useEffect(() => {
     if (atBottomRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      tryMarkReadIfViewing();
     }
-  }, [messages, editId]);
+  }, [messages, editId, tryMarkReadIfViewing]);
+
+  useEffect(() => {
+    const onMaybeMark = () => tryMarkReadIfViewing();
+    document.addEventListener("visibilitychange", onMaybeMark);
+    window.addEventListener("focus", onMaybeMark);
+    return () => {
+      document.removeEventListener("visibilitychange", onMaybeMark);
+      window.removeEventListener("focus", onMaybeMark);
+    };
+  }, [tryMarkReadIfViewing]);
 
   function handleScroll() {
     const el = scrollRef.current;
@@ -435,12 +461,14 @@ export function ChatConversation({
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     atBottomRef.current = atBottom;
     setShowScrollDown(!atBottom);
+    if (atBottom) tryMarkReadIfViewing();
   }
 
   function scrollToBottom() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     atBottomRef.current = true;
     setShowScrollDown(false);
+    requestAnimationFrame(() => tryMarkReadIfViewing());
   }
 
   function notifyTyping() {
