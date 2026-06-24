@@ -14,6 +14,7 @@ export function ChatRightSidebar({
   open,
   onClose,
   embedded = false,
+  side = "right",
   users,
   channels,
   previews,
@@ -38,6 +39,8 @@ export function ChatRightSidebar({
   onRefresh: () => void;
   loading?: boolean;
   embedded?: boolean;
+  /** Sidebar edge when open. Chat page uses left; floating chat keeps right. */
+  side?: "left" | "right";
 }) {
   const [tab, setTab] = useState<Tab>("dm");
   const [query, setQuery] = useState("");
@@ -112,8 +115,8 @@ export function ChatRightSidebar({
     <>
       <aside
         className={`${
-          embedded ? "absolute top-0 right-0 h-full" : "fixed top-0 right-0 h-full"
-        } z-50 w-80 max-w-[90vw] bg-white border-l border-slate-200 shadow-xl flex flex-col`}
+          embedded ? "absolute top-0 h-full" : "fixed top-0 h-full"
+        } ${side === "left" ? "left-0 border-r" : "right-0 border-l"} z-50 w-80 max-w-[90vw] bg-white border-slate-200 shadow-xl flex flex-col`}
       >
         <div className="px-4 py-3 border-b border-slate-200 shrink-0 flex items-center justify-between">
           <h2 className="font-semibold text-slate-900">Chat</h2>

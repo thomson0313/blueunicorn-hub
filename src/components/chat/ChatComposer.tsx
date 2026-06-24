@@ -391,6 +391,7 @@ export const ChatComposer = forwardRef<
       <div className="relative p-2 min-w-0" ref={inputAreaRef}>
         {colonQuery && !recording && !mentionOpen && (
           <ChatEmojiAutocomplete
+            anchorRef={inputRowRef}
             query={colonQuery}
             onPick={(code) => {
               const emoji = EMOJI_SHORTCODES[code] || "";
@@ -405,7 +406,7 @@ export const ChatComposer = forwardRef<
             open
             anchorRef={inputRowRef}
             placement="above"
-            zIndex={100}
+            zIndex={150}
             width={260}
             gap={4}
           >

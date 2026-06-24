@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
+import { AnchoredPortal } from "@/components/chat/AnchoredPortal";
 import { EmailVerifiedBadge } from "@/components/EmailVerifiedBadge";
 import { useApp } from "@/components/AppProvider";
 import type { Profile } from "@/lib/types";
@@ -26,7 +27,7 @@ function RoleBadge({ role }: { role: "admin" | "member" }) {
   );
 }
 
-function ProfilePopup({
+function ProfilePopupContent({
   user,
   profile,
   onClose,
@@ -38,7 +39,7 @@ function ProfilePopup({
   onLogout: () => void;
 }) {
   return (
-    <div className="absolute z-[60] left-full ml-2 bottom-0 w-64 rounded-xl border shadow-xl py-2 text-sm bg-white border-slate-200 text-left">
+    <>
       <div className="px-4 py-3 border-b border-slate-100">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="font-semibold text-slate-900 truncate">{user.name}</p>
@@ -67,7 +68,7 @@ function ProfilePopup({
           Log out
         </button>
       </nav>
-    </div>
+    </>
   );
 }
 
@@ -77,6 +78,7 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   const isLight = theme === "light";
 
@@ -105,18 +107,31 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
   }
 
   const popup = open ? (
-    <ProfilePopup
-      user={user}
-      profile={profile}
-      onClose={() => setOpen(false)}
-      onLogout={() => void logout()}
-    />
+    <AnchoredPortal
+      open
+      anchorRef={buttonRef}
+      placement={isLight ? "below" : "below"}
+      align={isLight ? "left" : "right"}
+      zIndex={150}
+      width={256}
+      gap={8}
+    >
+      <div className="rounded-xl border shadow-xl py-2 text-sm bg-white border-slate-200 text-left">
+        <ProfilePopupContent
+          user={user}
+          profile={profile}
+          onClose={() => setOpen(false)}
+          onLogout={() => void logout()}
+        />
+      </div>
+    </AnchoredPortal>
   ) : null;
 
   if (isLight) {
     return (
       <div ref={rootRef} className={showName ? "w-full" : "inline-flex"}>
         <button
+          ref={buttonRef}
           type="button"
           onClick={() => setOpen((o) => !o)}
           className={`flex items-center gap-2 rounded-lg cursor-pointer transition hover:bg-white/10 p-1.5 ${
@@ -127,7 +142,6 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
         >
           <span className="relative shrink-0">
             <Avatar name={user.name} src={avatarUrl} size={showName ? 32 : 30} bordered />
-            {popup}
           </span>
           {showName && (
             <div className="min-w-0 flex-1 text-left hidden md:block">
@@ -138,6 +152,7 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
             </div>
           )}
         </button>
+        {popup}
       </div>
     );
   }
@@ -145,6 +160,7 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 rounded-lg cursor-pointer transition group"
@@ -153,38 +169,7 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
       >
         <Avatar name={user.name} src={avatarUrl} size={30} bordered />
       </button>
-      {open && (
-        <div className="absolute z-[60] right-0 top-full mt-2 w-64 rounded-xl border shadow-xl py-2 text-sm bg-white border-slate-200">
-          <div className="px-4 py-3 border-b border-slate-100">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-semibold text-slate-900 truncate">{user.name}</p>
-              <RoleBadge role={user.role} />
-            </div>
-            <div className="flex items-center gap-1.5 flex-wrap mt-1">
-              <p className="text-xs text-slate-500 truncate">{profile?.email ?? user.email}</p>
-              {profile && <EmailVerifiedBadge verified={profile.emailVerified} compact />}
-            </div>
-            {profile?.username && <p className="text-xs text-slate-500 mt-0.5">@{profile.username}</p>}
-            {profile?.fieldName && (
-              <span className="inline-block mt-2 text-[10px] px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-medium">
-                {profile.fieldName}
-              </span>
-            )}
-          </div>
-          <nav className="py-1">
-            <Link href="/profile" onClick={() => setOpen(false)} className="block px-4 py-2 text-slate-700 hover:bg-slate-50">
-              Profile
-            </Link>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 cursor-pointer"
-            >
-              Log out
-            </button>
-          </nav>
-        </div>
-      )}
+      {popup}
     </div>
   );
 }

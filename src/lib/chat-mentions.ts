@@ -97,19 +97,10 @@ export function buildMentionHandleSet(members: MentionMember[]): Set<string> {
   return set;
 }
 
-/** Lenient mention highlighting for rendered messages. */
-export function splitDisplayMentions(content: string): MessageContentPart[] {
-  const parts: MessageContentPart[] = [];
-  const re = /@(Everyone|[\w]+)(?=$|[\s,.!?;:])/g;
-  let last = 0;
-
-  for (const match of content.matchAll(re)) {
-    const idx = match.index ?? 0;
-    if (idx > last) parts.push({ type: "text", value: content.slice(last, idx) });
-    parts.push({ type: "mention", value: match[0] });
-    last = idx + match[0].length;
-  }
-
-  if (last < content.length) parts.push({ type: "text", value: content.slice(last) });
-  return parts.length ? parts : [{ type: "text", value: content }];
+/** Highlight only valid @mentions in rendered messages. */
+export function splitDisplayMentions(
+  content: string,
+  handles: Set<string>
+): MessageContentPart[] {
+  return splitMentionContent(content, handles);
 }

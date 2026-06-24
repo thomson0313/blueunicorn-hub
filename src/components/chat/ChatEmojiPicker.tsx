@@ -11,39 +11,9 @@ import {
 } from "@/lib/chat-emoji";
 
 function CategoryIcon({ id, active }: { id: string; active: boolean }) {
-  const cls = `w-4 h-4 ${active ? "text-slate-700" : "text-slate-400"}`;
-  if (id === "smileys") {
-    return (
-      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-        <circle cx="12" cy="12" r="10" />
-        <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-        <line x1="9" y1="9" x2="9.01" y2="9" />
-        <line x1="15" y1="9" x2="15.01" y2="9" />
-      </svg>
-    );
-  }
-  if (id === "gestures") {
-    return (
-      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-        <path d="M7 11V7a2 2 0 0 1 4 0v4" />
-        <path d="M11 11V5a2 2 0 0 1 4 0v6" />
-        <path d="M15 11V7a2 2 0 0 1 4 0v8a6 6 0 0 1-6 6H9a4 4 0 0 1-4-4v-4a2 2 0 0 1 4 0v4" />
-      </svg>
-    );
-  }
-  if (id === "objects") {
-    return (
-      <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-        <rect x="2" y="7" width="20" height="14" rx="2" />
-        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-      </svg>
-    );
-  }
-  return (
-    <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
-  );
+  const category = EMOJI_CATEGORIES.find((c) => c.id === id);
+  const icon = category?.icon ?? "😀";
+  return <span className={`text-base leading-none ${active ? "" : "opacity-60"}`}>{icon}</span>;
 }
 
 export function ChatEmojiPicker({
@@ -83,7 +53,7 @@ export function ChatEmojiPicker({
   }
 
   return (
-    <AnchoredPortal open anchorRef={anchorRef} placement="above" align="right" zIndex={100} width={288} gap={4}>
+    <AnchoredPortal open anchorRef={anchorRef} placement="above" align="right" zIndex={150} width={288} gap={4}>
       <div
         ref={ref}
         className="w-72 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-80"
@@ -149,27 +119,31 @@ export function ChatEmojiPicker({
 }
 
 export function ChatEmojiAutocomplete({
+  anchorRef,
   query,
   onPick,
 }: {
+  anchorRef: React.RefObject<HTMLElement | null>;
   query: string;
   onPick: (code: string) => void;
 }) {
   const matches = filterShortcodes(query);
   if (!matches.length) return null;
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg z-[100] py-1 max-h-40 overflow-y-auto">
-      {matches.map(({ code, emoji }) => (
-        <button
-          key={code}
-          type="button"
-          onClick={() => onPick(code)}
-          className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-sm cursor-pointer"
-        >
-          <span>{emoji}</span>
-          <span className="text-slate-500">:{code}:</span>
-        </button>
-      ))}
-    </div>
+    <AnchoredPortal open anchorRef={anchorRef} placement="above" zIndex={150} width={260} gap={4}>
+      <div className="bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-40 overflow-y-auto">
+        {matches.map(({ code, emoji }) => (
+          <button
+            key={code}
+            type="button"
+            onClick={() => onPick(code)}
+            className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-sm cursor-pointer"
+          >
+            <span>{emoji}</span>
+            <span className="text-slate-500">:{code}:</span>
+          </button>
+        ))}
+      </div>
+    </AnchoredPortal>
   );
 }

@@ -827,6 +827,7 @@ export function ChatConversation({
                       }}
                       onReaction={(emoji) => void reactToMessage(m._id, emoji)}
                       currentUserId={user.sub}
+                      mentionMembers={mentionMembers}
                     />
                   );
                 })

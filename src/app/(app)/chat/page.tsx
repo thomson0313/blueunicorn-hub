@@ -18,7 +18,7 @@ export default function ChatPage() {
 
   return (
     <div className="relative h-[calc(100vh-9rem)]">
-      <div className="h-full mr-80 bg-white rounded-xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
+      <div className="h-full ml-80 bg-white rounded-xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
         {target ? (
           <ChatConversation
             target={target}
@@ -39,6 +39,7 @@ export default function ChatPage() {
       <ChatRightSidebar
         open
         embedded
+        side="left"
         onClose={() => {}}
         users={users}
         channels={channels}

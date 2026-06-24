@@ -13,7 +13,7 @@ import {
 } from "@/lib/chat-attachment-utils";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { splitMessageContent } from "@/lib/chat-format";
-import { MENTION_HIGHLIGHT_CLASS, MENTION_HIGHLIGHT_MINE_CLASS, splitDisplayMentions } from "@/lib/chat-mentions";
+import { buildMentionHandleSet, MENTION_HIGHLIGHT_CLASS, MENTION_HIGHLIGHT_MINE_CLASS, splitMentionContent, type MentionMember } from "@/lib/chat-mentions";
 import { closeAllChatContextMenus } from "@/lib/chat-context-menu";
 import type { ChatMessage } from "@/lib/types";
 
@@ -21,12 +21,15 @@ export function ChatMessageContent({
   message,
   mine,
   pending = false,
+  mentionMembers = [],
 }: {
   message: ChatMessage;
   mine: boolean;
   pending?: boolean;
+  mentionMembers?: MentionMember[];
 }) {
   const attachments = message.attachments || [];
+  const mentionHandles = buildMentionHandleSet(mentionMembers);
   const [previewAttachment, setPreviewAttachment] = useState<AttachmentLike | null>(null);
   const [attachmentMenu, setAttachmentMenu] = useState<{
     x: number;
@@ -76,7 +79,7 @@ export function ChatMessageContent({
               </a>
             ) : (
               <span key={i}>
-                {splitDisplayMentions(seg.value).map((part, j) =>
+                {splitMentionContent(seg.value, mentionHandles).map((part, j) =>
                   part.type === "mention" ? (
                     <span
                       key={j}

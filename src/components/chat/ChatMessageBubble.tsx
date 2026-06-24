@@ -7,6 +7,7 @@ import { DeliveryStatusIcon } from "@/components/chat/DeliveryStatusIcon";
 import { isImageMime } from "@/lib/chat-attachment-utils";
 import { resolveChatAttachmentUrl } from "@/lib/chat-attachment-url";
 import { formatMessageTime } from "@/lib/chat-format";
+import type { MentionMember } from "@/lib/chat-mentions";
 import type { ChatMessage } from "@/lib/types";
 
 export function ChatMessageBubble({
@@ -24,6 +25,7 @@ export function ChatMessageBubble({
   onContextMenu,
   onReaction,
   currentUserId,
+  mentionMembers = [],
 }: {
   message: ChatMessage;
   mine: boolean;
@@ -39,6 +41,7 @@ export function ChatMessageBubble({
   onContextMenu: (e: React.MouseEvent, message: ChatMessage) => void;
   onReaction?: (emoji: string) => void;
   currentUserId: string;
+  mentionMembers?: MentionMember[];
 }) {
   const editRef = useRef<HTMLTextAreaElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -158,7 +161,7 @@ export function ChatMessageBubble({
             </div>
           ) : (
             <>
-              <ChatMessageContent message={message} mine={mine} pending={message.pending} />
+              <ChatMessageContent message={message} mine={mine} pending={message.pending} mentionMembers={mentionMembers} />
               <div
                 className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
                   mine ? "text-brand-100" : "text-slate-400"
