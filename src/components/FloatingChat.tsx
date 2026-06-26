@@ -29,6 +29,12 @@ export function FloatingChat() {
     }[];
   }>({ channelMembers: [] });
   const [searchOpen, setSearchOpen] = useState(false);
+  const [dmReloadSeq, setDmReloadSeq] = useState(0);
+
+  function handleDmDeleted() {
+    setDmReloadSeq((n) => n + 1);
+    void refresh();
+  }
 
   function openConversation(target: string) {
     setPopupTarget(target);
@@ -93,10 +99,7 @@ export function FloatingChat() {
               setPopupTarget(null);
               void refresh();
             }}
-            onDmDeleted={() => {
-              setPopupTarget(null);
-              void refresh();
-            }}
+            onDmDeleted={handleDmDeleted}
           />
           <div className={popupMinimized ? "hidden" : "flex flex-col flex-1 min-h-0"}>
             {loading && users.length === 0 ? (
@@ -116,10 +119,8 @@ export function FloatingChat() {
                   setPopupTarget(null);
                   void refresh();
                 }}
-                onDmDeleted={() => {
-                  setPopupTarget(null);
-                  void refresh();
-                }}
+                onDmDeleted={() => void refresh()}
+                dmReloadSeq={dmReloadSeq}
               />
             )}
           </div>

@@ -72,8 +72,6 @@ export type ConversationPreview = {
   avatarUrl?: string | null;
   online?: boolean;
   visibility?: ChannelVisibility;
-  /** DM hidden by this user with no newer messages visible. */
-  hiddenEmpty?: boolean;
 };
 
 type ChannelRow = {
@@ -841,32 +839,20 @@ export async function listConversationPreviews(userId: string): Promise<Conversa
     lastAt: generalLast?.created_at,
   });
 
+  const hiddenMap = await listUserHiddenDmMap(userId);
+
   const dmByPeer = new Map<string, { content: string; created_at: string; sender: string }>();
   for (const row of dmRes.data || []) {
     const peer = row.sender === userId ? row.recipient : row.sender;
     if (!peer || dmByPeer.has(peer)) continue;
+    const hiddenAt = hiddenMap.get(dmConversationKey(userId, peer));
+    if (hiddenAt && row.created_at <= hiddenAt) continue;
     dmByPeer.set(peer, row);
   }
 
-  const hiddenMap = await listUserHiddenDmMap(userId);
-
   for (const u of users) {
     const convKey = dmConversationKey(userId, u._id);
-    const hiddenAt = hiddenMap.get(convKey);
     const last = dmByPeer.get(u._id);
-    if (hiddenAt && (!last || last.created_at <= hiddenAt)) {
-      previews.push({
-        key: convKey,
-        target: u._id,
-        kind: "dm",
-        title: u.name,
-        subtitle: u.email,
-        avatarName: u.name,
-        avatarUrl: u.avatarUrl,
-        hiddenEmpty: true,
-      });
-      continue;
-    }
     previews.push({
       key: convKey,
       target: u._id,

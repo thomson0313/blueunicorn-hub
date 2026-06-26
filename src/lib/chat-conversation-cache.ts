@@ -41,3 +41,7 @@ export function removeCachedMessage(target: string, messageId: string) {
   if (!entry) return;
   entry.messages = entry.messages.filter((m) => m._id !== messageId);
 }
+
+export function clearConversationCache(target: string) {
+  cache.delete(target);
+}

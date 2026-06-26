@@ -77,7 +77,6 @@ export function ChatRightSidebar({
           avatarUrl: u.avatarUrl,
         };
       })
-      .filter((item) => !item.preview?.hiddenEmpty)
       .filter((item) => !q || item.title.toLowerCase().includes(q) || item.preview?.lastMessage?.toLowerCase().includes(q))
       .sort((a, b) => {
         const ta = a.preview?.lastAt || "";

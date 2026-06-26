@@ -15,6 +15,7 @@ import {
   getConversationCache,
   patchCachedMessage,
   removeCachedMessage,
+  clearConversationCache,
   setConversationCache,
 } from "@/lib/chat-conversation-cache";
 import { messageToPreviewTarget } from "@/lib/chat-preview-sync";
@@ -37,6 +38,7 @@ export function ChatConversation({
   onChannelUpdated,
   onChannelDeleted,
   onDmDeleted,
+  dmReloadSeq = 0,
   onHeaderStateChange,
 }: {
   target: string;
@@ -51,6 +53,8 @@ export function ChatConversation({
   onChannelUpdated?: () => void;
   onChannelDeleted?: () => void;
   onDmDeleted?: () => void;
+  /** Increment to reload messages after DM delete from an external header. */
+  dmReloadSeq?: number;
   onHeaderStateChange?: (state: {
     channelMembers: {
       userId: string;
@@ -163,16 +167,18 @@ export function ChatConversation({
     setConversationViewed(target);
   }, [markRead, setConversationViewed, target]);
 
-  const loadHistory = useCallback(async () => {
-    const cached = getConversationCache(target);
-    if (cached && cached.channelMembers.every((m) => m.userId)) {
-      setMessages(cached.messages);
-      setPeerReadAt(cached.peerReadAt);
-      setChannelMeta(cached.channelMeta);
-      setChannelMembers(cached.channelMembers);
-      lastMessageAtRef.current = cached.lastMessageAt;
-      setLoading(false);
-      return;
+  const loadHistory = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getConversationCache(target);
+      if (cached && cached.channelMembers.every((m) => m.userId)) {
+        setMessages(cached.messages);
+        setPeerReadAt(cached.peerReadAt);
+        setChannelMeta(cached.channelMeta);
+        setChannelMembers(cached.channelMembers);
+        lastMessageAtRef.current = cached.lastMessageAt;
+        setLoading(false);
+        return;
+      }
     }
 
     setLoading(true);
@@ -222,7 +228,19 @@ export function ChatConversation({
         })) || [],
       lastMessageAt: lastMessageAtRef.current,
     });
-  }, [target, markRead]);
+  }, [target]);
+
+  const handleDmDeleted = useCallback(async () => {
+    clearConversationCache(target);
+    await loadHistory(true);
+    onDmDeleted?.();
+  }, [target, loadHistory, onDmDeleted]);
+
+  useEffect(() => {
+    if (!dmReloadSeq) return;
+    clearConversationCache(target);
+    void loadHistory(true);
+  }, [dmReloadSeq, target, loadHistory]);
 
   useEffect(() => {
     lastMarkedReadRef.current = null;
@@ -745,7 +763,7 @@ export function ChatConversation({
           userRole={user.role}
           onChannelUpdated={onChannelUpdated}
           onChannelDeleted={onChannelDeleted}
-          onDmDeleted={onDmDeleted}
+          onDmDeleted={() => void handleDmDeleted()}
         />
       )}
 

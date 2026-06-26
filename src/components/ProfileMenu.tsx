@@ -115,7 +115,8 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
       anchorRef={buttonRef}
       panelRef={popupRef}
       placement={isLight ? "above" : "below"}
-      align={isLight ? "right" : "right"}
+      align="left"
+      anchorSide={isLight ? "right" : undefined}
       zIndex={150}
       width={256}
       gap={8}

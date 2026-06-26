@@ -154,7 +154,6 @@ export type ChatConversationPreview = {
   avatarUrl?: string | null;
   online?: boolean;
   visibility?: "public" | "private";
-  hiddenEmpty?: boolean;
 };
 
 export type AlertItem = {

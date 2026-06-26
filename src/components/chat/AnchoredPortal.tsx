@@ -11,6 +11,7 @@ export function AnchoredPortal({
   anchorRef,
   placement = "above",
   align = "left",
+  anchorSide,
   children,
   className = "",
   zIndex = 100,
@@ -22,6 +23,8 @@ export function AnchoredPortal({
   anchorRef: React.RefObject<HTMLElement | null>;
   placement?: Placement;
   align?: "left" | "right";
+  /** When "right", panel opens to the right of the anchor (e.g. admin sidebar footer). */
+  anchorSide?: "left" | "right";
   children: React.ReactNode;
   className?: string;
   zIndex?: number;
@@ -52,7 +55,12 @@ export function AnchoredPortal({
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const menuW = Math.min(width, window.innerWidth - 16);
-      const leftBase = align === "right" ? rect.right - menuW : rect.left;
+      const leftBase =
+        anchorSide === "right"
+          ? rect.right + gap
+          : align === "right"
+            ? rect.right - menuW
+            : rect.left;
       const { left } = anchoredPosition(leftBase, rect.top, menuW, 0);
 
       if (placement === "above") {
@@ -74,7 +82,7 @@ export function AnchoredPortal({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open, anchorRef, placement, align, width, gap]);
+  }, [open, anchorRef, placement, align, anchorSide, width, gap]);
 
   if (!open || !mounted || !pos) return null;
 

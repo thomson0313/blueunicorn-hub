@@ -340,7 +340,7 @@ function ChatHeaderCore({
       <ConfirmDialog
         open={showDeleteDmConfirm}
         title="Delete chat?"
-        message={`Remove this conversation from your chat list? Messages will stay visible for ${title} unless they delete it on their side.`}
+        message={`Clear all messages on your side? ${title} will still see the chat unless they clear it too. The conversation stays in your list.`}
         confirmLabel="Delete"
         loading={deleting}
         onConfirm={() => void confirmDeleteDm()}
@@ -460,7 +460,6 @@ export function ChatPopupHeader({
             }}
             onDmDeleted={() => {
               onDmDeleted?.();
-              onClose();
             }}
             compact
           />
