@@ -79,6 +79,7 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
   const isLight = theme === "light";
 
@@ -93,7 +94,9 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
   useEffect(() => {
     if (!open) return;
     function onOutside(e: MouseEvent) {
-      if (rootRef.current?.contains(e.target as Node)) return;
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (popupRef.current?.contains(target)) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", onOutside);
@@ -110,8 +113,9 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
     <AnchoredPortal
       open
       anchorRef={buttonRef}
-      placement={isLight ? "below" : "below"}
-      align={isLight ? "left" : "right"}
+      panelRef={popupRef}
+      placement={isLight ? "above" : "below"}
+      align={isLight ? "right" : "right"}
       zIndex={150}
       width={256}
       gap={8}

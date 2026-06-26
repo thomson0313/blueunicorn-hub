@@ -93,6 +93,10 @@ export function FloatingChat() {
               setPopupTarget(null);
               void refresh();
             }}
+            onDmDeleted={() => {
+              setPopupTarget(null);
+              void refresh();
+            }}
           />
           <div className={popupMinimized ? "hidden" : "flex flex-col flex-1 min-h-0"}>
             {loading && users.length === 0 ? (
@@ -109,6 +113,10 @@ export function FloatingChat() {
                 onSearchOpenChange={setSearchOpen}
                 onChannelUpdated={() => void refresh()}
                 onChannelDeleted={() => {
+                  setPopupTarget(null);
+                  void refresh();
+                }}
+                onDmDeleted={() => {
                   setPopupTarget(null);
                   void refresh();
                 }}

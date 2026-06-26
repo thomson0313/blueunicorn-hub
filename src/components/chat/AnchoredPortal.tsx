@@ -16,6 +16,7 @@ export function AnchoredPortal({
   zIndex = 100,
   width = 320,
   gap = 6,
+  panelRef,
 }: {
   open: boolean;
   anchorRef: React.RefObject<HTMLElement | null>;
@@ -26,6 +27,7 @@ export function AnchoredPortal({
   zIndex?: number;
   width?: number;
   gap?: number;
+  panelRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const [pos, setPos] = useState<{
     left: number;
@@ -78,6 +80,7 @@ export function AnchoredPortal({
 
   return createPortal(
     <div
+      ref={panelRef}
       className={className}
       style={{
         position: "fixed",

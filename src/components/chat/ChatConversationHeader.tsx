@@ -37,6 +37,8 @@ function HeaderMenu({
   canDeleteChannel,
   onEditChannel,
   onDeleteChannel,
+  canDeleteDm,
+  onDeleteDm,
 }: {
   profileHref?: string | null;
   searchOpen?: boolean;
@@ -45,6 +47,8 @@ function HeaderMenu({
   canDeleteChannel?: boolean;
   onEditChannel?: () => void;
   onDeleteChannel?: () => void;
+  canDeleteDm?: boolean;
+  onDeleteDm?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -75,7 +79,7 @@ function HeaderMenu({
   }, [menuOpen]);
 
   const hasItems =
-    onToggleSearch || profileHref || canEditChannel || canDeleteChannel;
+    onToggleSearch || profileHref || canEditChannel || canDeleteChannel || canDeleteDm;
   if (!hasItems) return null;
 
   return (
@@ -132,6 +136,18 @@ function HeaderMenu({
               Delete channel
             </button>
           )}
+          {canDeleteDm && onDeleteDm && (
+            <button
+              type="button"
+              onClick={() => {
+                onDeleteDm();
+                setMenuOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-red-600 cursor-pointer"
+            >
+              Delete chat
+            </button>
+          )}
           {profileHref && (
             <Link
               href={profileHref}
@@ -159,6 +175,7 @@ type HeaderCoreProps = {
   userRole: Role;
   onChannelUpdated?: () => void;
   onChannelDeleted?: () => void;
+  onDmDeleted?: () => void;
   compact?: boolean;
 };
 
@@ -174,6 +191,7 @@ function ChatHeaderCore({
   userRole,
   onChannelUpdated,
   onChannelDeleted,
+  onDmDeleted,
   compact,
 }: HeaderCoreProps) {
   const parsed = parseChatTarget(target);
@@ -188,9 +206,11 @@ function ChatHeaderCore({
   const isChannel = parsed.kind === "general" || parsed.kind === "channel";
   const canEdit = isChannel && perm.canEdit;
   const canDelete = isChannel && perm.canDelete && parsed.kind === "channel";
+  const canDeleteDm = parsed.kind === "dm";
 
   const [showEdit, setShowEdit] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDeleteDmConfirm, setShowDeleteDmConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   let title = "Chat";
@@ -242,6 +262,23 @@ function ChatHeaderCore({
     }
   }
 
+  async function confirmDeleteDm() {
+    if (parsed.kind !== "dm") {
+      setShowDeleteDmConfirm(false);
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/chat/conversations?target=${encodeURIComponent(parsed.userId)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) onDmDeleted?.();
+    } finally {
+      setDeleting(false);
+      setShowDeleteDmConfirm(false);
+    }
+  }
+
   const avatarSize = compact ? 32 : 36;
 
   return (
@@ -275,6 +312,8 @@ function ChatHeaderCore({
           canDeleteChannel={canDelete}
           onEditChannel={() => setShowEdit(true)}
           onDeleteChannel={() => setShowDeleteConfirm(true)}
+          canDeleteDm={canDeleteDm}
+          onDeleteDm={() => setShowDeleteDmConfirm(true)}
         />
       </div>
 
@@ -297,6 +336,16 @@ function ChatHeaderCore({
         onConfirm={() => void confirmDeleteChannel()}
         onCancel={() => setShowDeleteConfirm(false)}
       />
+
+      <ConfirmDialog
+        open={showDeleteDmConfirm}
+        title="Delete chat?"
+        message={`Remove this conversation from your chat list? Messages will stay visible for ${title} unless they delete it on their side.`}
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={() => void confirmDeleteDm()}
+        onCancel={() => setShowDeleteDmConfirm(false)}
+      />
     </>
   );
 }
@@ -314,6 +363,7 @@ export function ChatConversationHeader({
   userRole,
   onChannelUpdated,
   onChannelDeleted,
+  onDmDeleted,
 }: {
   target: string;
   users: PublicUser[];
@@ -327,6 +377,7 @@ export function ChatConversationHeader({
   userRole: Role;
   onChannelUpdated?: () => void;
   onChannelDeleted?: () => void;
+  onDmDeleted?: () => void;
 }) {
   return (
     <div className="shrink-0 border-b border-slate-200">
@@ -342,6 +393,7 @@ export function ChatConversationHeader({
         userRole={userRole}
         onChannelUpdated={onChannelUpdated}
         onChannelDeleted={onChannelDeleted}
+        onDmDeleted={onDmDeleted}
       />
       {!connected && (
         <div className="px-4 py-1.5 bg-amber-50 text-amber-800 text-xs border-t border-amber-100">
@@ -368,6 +420,7 @@ export function ChatPopupHeader({
   userRole,
   onChannelUpdated,
   onChannelDeleted,
+  onDmDeleted,
 }: {
   target: string;
   users: PublicUser[];
@@ -384,6 +437,7 @@ export function ChatPopupHeader({
   userRole: Role;
   onChannelUpdated?: () => void;
   onChannelDeleted?: () => void;
+  onDmDeleted?: () => void;
 }) {
   return (
     <div className="shrink-0 border-b border-slate-200 bg-slate-50">
@@ -402,6 +456,10 @@ export function ChatPopupHeader({
             onChannelUpdated={onChannelUpdated}
             onChannelDeleted={() => {
               onChannelDeleted?.();
+              onClose();
+            }}
+            onDmDeleted={() => {
+              onDmDeleted?.();
               onClose();
             }}
             compact

@@ -27,6 +27,10 @@ export default function ChatPage() {
             className="flex-1"
             onChannelUpdated={() => void refresh()}
             onChannelDeleted={() => setTarget(null)}
+            onDmDeleted={() => {
+              setTarget(null);
+              void refresh();
+            }}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center p-8">

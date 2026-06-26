@@ -24,6 +24,7 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
   const [loading, setLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [panelPos, setPanelPos] = useState<{ left: number; top: number } | null>(null);
   const [mounted, setMounted] = useState(false);
   const isLight = theme === "light";
@@ -46,7 +47,9 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
   useEffect(() => {
     if (!open) return;
     function onOutside(e: MouseEvent) {
-      if (rootRef.current?.contains(e.target as Node)) return;
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", onOutside);
@@ -99,7 +102,8 @@ export function NotificationPanel({ theme = "dark", placement = "top" }: Props) 
   const popupEl =
     open && panelPos && mounted ? (
       <div
-        className="fixed z-[100] w-[min(360px,calc(100vw-2rem))] max-h-[min(420px,70vh)] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
+        ref={panelRef}
+        className="fixed z-[150] w-[min(360px,calc(100vw-2rem))] max-h-[min(420px,70vh)] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
         style={{ left: panelPos.left, top: panelPos.top }}
       >
           <div className="px-4 py-3 border-b border-slate-100 shrink-0">

@@ -8,6 +8,7 @@ import {
   getChannelPeerReadAt,
   getGeneralChannelMeta,
   getPeerReadAt,
+  getUserDmHiddenAt,
   listChannelMembers,
   listChannelMessages,
   listChannelMessagesSince,
@@ -57,9 +58,10 @@ export async function GET(req: Request) {
     if (parsed.kind === "dm") {
       const key = dmKeyFor(me.sub, parsed.userId);
       const convKey = dmConversationKey(me.sub, parsed.userId);
+      const hiddenAfter = await getUserDmHiddenAt(me.sub, parsed.userId);
       const rows = since
-        ? await listDmMessagesSinceExtended(key, since)
-        : await listDmMessagesExtended(key);
+        ? await listDmMessagesSinceExtended(key, since, 100, hiddenAfter)
+        : await listDmMessagesExtended(key, 200, hiddenAfter);
       const peerReadAt = await getPeerReadAt(parsed.userId, convKey);
       return NextResponse.json({
         messages: rows.map((m) => toChatMessage(m, parsed.userId)),

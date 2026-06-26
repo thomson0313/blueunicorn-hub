@@ -77,6 +77,7 @@ export function ChatRightSidebar({
           avatarUrl: u.avatarUrl,
         };
       })
+      .filter((item) => !item.preview?.hiddenEmpty)
       .filter((item) => !q || item.title.toLowerCase().includes(q) || item.preview?.lastMessage?.toLowerCase().includes(q))
       .sort((a, b) => {
         const ta = a.preview?.lastAt || "";
@@ -116,7 +117,9 @@ export function ChatRightSidebar({
       <aside
         className={`${
           embedded ? "absolute top-0 h-full" : "fixed top-0 h-full"
-        } ${side === "left" ? "left-0 border-r" : "right-0 border-l"} z-50 w-80 max-w-[90vw] bg-white border-slate-200 shadow-xl flex flex-col`}
+        } ${side === "left" ? "left-0 border-r" : "right-0 border-l"} ${
+          embedded ? "z-50" : "z-30"
+        } w-80 max-w-[90vw] bg-white border-slate-200 shadow-xl flex flex-col`}
       >
         <div className="px-4 py-3 border-b border-slate-200 shrink-0 flex items-center justify-between">
           <h2 className="font-semibold text-slate-900">Chat</h2>

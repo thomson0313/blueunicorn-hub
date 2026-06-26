@@ -36,6 +36,7 @@ export function ChatConversation({
   onMessageDeleted,
   onChannelUpdated,
   onChannelDeleted,
+  onDmDeleted,
   onHeaderStateChange,
 }: {
   target: string;
@@ -49,6 +50,7 @@ export function ChatConversation({
   onMessageDeleted?: () => void;
   onChannelUpdated?: () => void;
   onChannelDeleted?: () => void;
+  onDmDeleted?: () => void;
   onHeaderStateChange?: (state: {
     channelMembers: {
       userId: string;
@@ -743,6 +745,7 @@ export function ChatConversation({
           userRole={user.role}
           onChannelUpdated={onChannelUpdated}
           onChannelDeleted={onChannelDeleted}
+          onDmDeleted={onDmDeleted}
         />
       )}
 

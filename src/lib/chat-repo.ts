@@ -72,6 +72,8 @@ export type ConversationPreview = {
   avatarUrl?: string | null;
   online?: boolean;
   visibility?: ChannelVisibility;
+  /** DM hidden by this user with no newer messages visible. */
+  hiddenEmpty?: boolean;
 };
 
 type ChannelRow = {
@@ -385,10 +387,11 @@ export async function listGeneralMessagesSinceExtended(
 
 export async function listDmMessagesExtended(
   dmKey: string,
-  limit = 200
+  limit = 200,
+  hiddenAfter?: string | null
 ): Promise<ExtendedMessageRec[]> {
   const users = await listUsers();
-  const { data, error } = await getSupabase()
+  let query = getSupabase()
     .from("messages")
     .select("*")
     .eq("channel_type", "dm")
@@ -396,6 +399,10 @@ export async function listDmMessagesExtended(
     .is("deleted_at", null)
     .order("created_at", { ascending: true })
     .limit(limit);
+  if (hiddenAfter) {
+    query = query.gt("created_at", hiddenAfter);
+  }
+  const { data, error } = await query;
   dbError(error);
   return attachMessageMeta((data || []) as MessageRow[], users);
 }
@@ -403,16 +410,19 @@ export async function listDmMessagesExtended(
 export async function listDmMessagesSinceExtended(
   dmKey: string,
   since: string,
-  limit = 100
+  limit = 100,
+  hiddenAfter?: string | null
 ): Promise<ExtendedMessageRec[]> {
   const users = await listUsers();
+  const cutoff =
+    hiddenAfter && hiddenAfter > since ? hiddenAfter : since;
   const { data, error } = await getSupabase()
     .from("messages")
     .select("*")
     .eq("channel_type", "dm")
     .eq("dm_key", dmKey)
     .is("deleted_at", null)
-    .gt("created_at", since)
+    .gt("created_at", cutoff)
     .order("created_at", { ascending: true })
     .limit(limit);
   dbError(error);
@@ -566,6 +576,41 @@ export async function setReadCursor(
       last_read_at: at || nowISO(),
     });
   dbError(error);
+}
+
+export async function getUserDmHiddenAt(
+  userId: string,
+  peerId: string
+): Promise<string | null> {
+  const convKey = dmConversationKey(userId, peerId);
+  const { data, error } = await getSupabase()
+    .from("user_conversation_state")
+    .select("hidden_at")
+    .eq("user_id", userId)
+    .eq("conversation_key", convKey)
+    .maybeSingle();
+  dbError(error);
+  return data?.hidden_at ?? null;
+}
+
+export async function hideUserDmConversation(userId: string, peerId: string): Promise<void> {
+  const convKey = dmConversationKey(userId, peerId);
+  const { error } = await getSupabase().from("user_conversation_state").upsert({
+    user_id: userId,
+    conversation_key: convKey,
+    hidden_at: nowISO(),
+  });
+  dbError(error);
+}
+
+async function listUserHiddenDmMap(userId: string): Promise<Map<string, string>> {
+  const { data, error } = await getSupabase()
+    .from("user_conversation_state")
+    .select("conversation_key, hidden_at")
+    .eq("user_id", userId)
+    .like("conversation_key", "dm:%");
+  dbError(error);
+  return new Map((data || []).map((row) => [row.conversation_key, row.hidden_at]));
 }
 
 export async function getPeerReadAt(
@@ -802,10 +847,28 @@ export async function listConversationPreviews(userId: string): Promise<Conversa
     if (!peer || dmByPeer.has(peer)) continue;
     dmByPeer.set(peer, row);
   }
+
+  const hiddenMap = await listUserHiddenDmMap(userId);
+
   for (const u of users) {
+    const convKey = dmConversationKey(userId, u._id);
+    const hiddenAt = hiddenMap.get(convKey);
     const last = dmByPeer.get(u._id);
+    if (hiddenAt && (!last || last.created_at <= hiddenAt)) {
+      previews.push({
+        key: convKey,
+        target: u._id,
+        kind: "dm",
+        title: u.name,
+        subtitle: u.email,
+        avatarName: u.name,
+        avatarUrl: u.avatarUrl,
+        hiddenEmpty: true,
+      });
+      continue;
+    }
     previews.push({
-      key: dmConversationKey(userId, u._id),
+      key: convKey,
       target: u._id,
       kind: "dm",
       title: u.name,
