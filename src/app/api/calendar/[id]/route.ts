@@ -20,6 +20,24 @@ const updateSchema = z.object({
 
 type Ctx = { params: Promise<{ id: string }> };
 
+export async function GET(_req: Request, { params }: Ctx) {
+  try {
+    const user = await requireUser();
+    const { id } = await params;
+    await connectDB();
+
+    const schedule = await findCalendarScheduleById(id);
+    if (!schedule) throw new HttpError(404, "Schedule not found");
+    if (user.role !== "admin" && schedule.userId !== user.sub) {
+      throw new HttpError(403, "You cannot view this schedule");
+    }
+
+    return NextResponse.json({ schedule });
+  } catch (err) {
+    return handleError(err);
+  }
+}
+
 export async function PATCH(req: Request, { params }: Ctx) {
   try {
     const user = await requireUser();

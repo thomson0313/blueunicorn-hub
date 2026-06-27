@@ -1598,14 +1598,13 @@ export async function listCalendarSchedulesForUser(
   return (data as CalendarScheduleRow[]).map(toCalendarScheduleRec);
 }
 
-export async function listInterviewSchedulesForDay(
+export async function listTeamSchedulesForDay(
   dayStart: string,
   dayEnd: string
 ): Promise<(CalendarScheduleRec & { userName: string; userAvatarUrl: string | null })[]> {
   const { data, error } = await getSupabase()
     .from("calendar_schedules")
     .select("*")
-    .eq("type", "interview")
     .lt("starts_at", dayEnd)
     .gt("ends_at", dayStart)
     .order("starts_at", { ascending: true });

@@ -87,10 +87,29 @@ export function AdminDayCalendar() {
     setAnchorDate(zonedDateTimeToUtc(addDaysYmd(dayYmd, days), 12, 0, timeZone));
   }
 
+  async function openScheduleDetail(schedule: CalendarScheduleWithUser) {
+    try {
+      const res = await fetch(`/api/calendar/${schedule._id}`);
+      const data = await res.json();
+      if (res.ok && data.schedule) {
+        setSelectedSchedule({
+          ...data.schedule,
+          userName: schedule.userName,
+          userAvatarUrl: schedule.userAvatarUrl,
+        });
+      } else {
+        setSelectedSchedule(schedules.find((s) => s._id === schedule._id) ?? schedule);
+      }
+    } catch {
+      setSelectedSchedule(schedules.find((s) => s._id === schedule._id) ?? schedule);
+    }
+    setDetailOpen(true);
+  }
+
   if (!timezoneReady) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-slate-900">Team interviews</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Team calendar</h1>
         <CalendarSkeleton variant="day" />
       </div>
     );
@@ -100,7 +119,7 @@ export function AdminDayCalendar() {
     <div className="space-y-4">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Team interviews</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Team calendar</h1>
           <p className="text-slate-500">{formatDayHeader(dayYmd, timeZone)} · read-only</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -194,15 +213,18 @@ export function AdminDayCalendar() {
                   </div>
                 ))}
 
-                {segments.map((seg, idx) => (
+                {segments.map((seg, idx) => {
+                  const isInterview = seg.schedule.type === "interview";
+                  return (
                   <button
                     key={`${seg.schedule._id}-${idx}`}
                     type="button"
-                    onClick={() => {
-                      setSelectedSchedule(seg.schedule);
-                      setDetailOpen(true);
-                    }}
-                    className={`absolute z-10 mx-0.5 rounded-md px-1.5 py-0.5 text-white text-left overflow-hidden shadow-sm cursor-pointer hover:brightness-110 transition ${seg.colorClass}`}
+                    onClick={() => void openScheduleDetail(seg.schedule)}
+                    className={`absolute z-10 mx-0.5 rounded-md px-1.5 py-0.5 text-left overflow-hidden shadow-sm cursor-pointer hover:brightness-110 transition border ${
+                      isInterview
+                        ? "bg-blue-500 border-blue-600 text-white"
+                        : "bg-sky-200 border-sky-300 text-sky-900"
+                    }`}
                     style={{
                       top: seg.topPx,
                       left: `calc(4rem + (100% - 4rem) * ${seg.memberIndex / members.length} + ((100% - 4rem) / ${members.length} - 4px) * ${seg.columnIndex / seg.columnCount} + 2px)`,
@@ -212,11 +234,11 @@ export function AdminDayCalendar() {
                     title={`${seg.schedule.userName}: ${seg.schedule.title}`}
                   >
                     <p className="text-xs font-semibold truncate">{seg.schedule.title}</p>
-                    <p className="text-[10px] opacity-90 truncate">
+                    <p className={`text-[10px] truncate ${isInterview ? "text-blue-100" : "text-sky-800"}`}>
                       {formatTimeRange(seg.schedule.startsAt, seg.schedule.endsAt, timeZone)}
                     </p>
                   </button>
-                ))}
+                );})}
 
                 {nowLineTop !== null && (
                   <div

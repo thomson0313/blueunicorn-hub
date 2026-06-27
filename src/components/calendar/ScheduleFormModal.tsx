@@ -126,10 +126,10 @@ export function ScheduleFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[min(90vh,640px)] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
           <h2 className="text-lg font-semibold text-slate-900">
             {isEdit ? "Edit schedule" : "Add schedule"}
           </h2>
@@ -142,7 +142,7 @@ export function ScheduleFormModal({
             ×
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4 overflow-y-auto min-h-0">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
             <input

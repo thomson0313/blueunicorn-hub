@@ -57,10 +57,10 @@ export function ScheduleDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[min(90vh,640px)] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <h2 className="text-lg font-semibold text-slate-900 truncate">{schedule.title}</h2>
             <span
@@ -114,7 +114,7 @@ export function ScheduleDetailModal({
             </button>
           </div>
         </div>
-        <div className="px-6 py-5 space-y-4 text-sm">
+        <div className="px-6 py-5 space-y-4 text-sm overflow-y-auto min-h-0">
           {userName && (
             <div>
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Team member</p>
@@ -127,12 +127,16 @@ export function ScheduleDetailModal({
               {formatTimeRange(schedule.startsAt, schedule.endsAt, timeZone)}
             </p>
           </div>
-          {schedule.description && (
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Description</p>
-              <p className="text-slate-700 mt-1 whitespace-pre-wrap">{schedule.description}</p>
-            </div>
-          )}
+          <div>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Description</p>
+            <p className="text-slate-700 mt-1 whitespace-pre-wrap">
+              {schedule.description?.trim() ? (
+                schedule.description
+              ) : (
+                <span className="text-slate-400 italic">No description</span>
+              )}
+            </p>
+          </div>
           {schedule.type === "interview" && schedule.meetingLink && (
             <div>
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Meeting link</p>
