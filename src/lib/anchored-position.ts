@@ -14,6 +14,7 @@ export function anchoredPosition(
   if (left + menuWidth + padding > window.innerWidth) {
     left = Math.max(padding, window.innerWidth - menuWidth - padding);
   }
+  if (left < padding) left = padding;
   if (top + menuHeight + padding > window.innerHeight) {
     top = Math.max(padding, y - menuHeight - padding);
   }
