@@ -79,6 +79,7 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const avatarRef = useRef<HTMLSpanElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
   const isLight = theme === "light";
@@ -112,11 +113,10 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
   const popup = open ? (
     <AnchoredPortal
       open
-      anchorRef={buttonRef}
+      anchorRef={avatarRef}
       panelRef={popupRef}
       placement={isLight ? "above" : "below"}
-      align="left"
-      anchorSide={isLight ? "right" : undefined}
+      align="right"
       zIndex={150}
       width={256}
       gap={8}
@@ -145,7 +145,7 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
           aria-expanded={open}
           aria-haspopup="true"
         >
-          <span className="relative shrink-0">
+          <span ref={avatarRef} className="relative shrink-0">
             <Avatar name={user.name} src={avatarUrl} size={showName ? 32 : 30} bordered />
           </span>
           {showName && (
@@ -172,7 +172,9 @@ export function ProfileMenu({ theme = "dark", showName = false }: Props) {
         aria-expanded={open}
         aria-haspopup="true"
       >
-        <Avatar name={user.name} src={avatarUrl} size={30} bordered />
+        <span ref={avatarRef} className="relative shrink-0">
+          <Avatar name={user.name} src={avatarUrl} size={30} bordered />
+        </span>
       </button>
       {popup}
     </div>
