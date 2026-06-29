@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useApp } from "@/components/AppProvider";
 import { Avatar } from "@/components/Avatar";
 import { CreateChannelModal } from "@/components/chat/CreateChannelModal";
 import { PanelSkeleton } from "@/components/skeleton/PanelSkeleton";
@@ -111,11 +112,14 @@ export function ChatRightSidebar({
 
   if (!open) return null;
 
+  const { user } = useApp();
+  const isAdmin = user.role === "admin";
+
   return (
     <>
       <aside
         className={`${
-          embedded ? "absolute top-0 h-full" : "fixed top-0 h-full"
+          embedded ? "absolute top-0 h-full" : `fixed ${isAdmin ? "top-0" : "top-14"} h-full`
         } ${side === "left" ? "left-0 border-r" : "right-0 border-l"} ${
           embedded ? "z-50" : "z-30"
         } w-80 max-w-[90vw] bg-white border-slate-200 shadow-xl flex flex-col`}
