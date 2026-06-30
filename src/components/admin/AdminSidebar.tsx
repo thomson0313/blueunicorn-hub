@@ -15,6 +15,7 @@ import {
   IconChat,
   IconDashboard,
   IconMembers,
+  IconPlayground,
   IconProjects,
   IconScreenShare,
 } from "@/components/icons/NavIcons";
@@ -38,6 +39,7 @@ const APP_LINKS: NavItem[] = [
   { href: "/admin/calendar", label: "Calendar", icon: <IconCalendar /> },
   { href: "/chat", label: "Chat", icon: <IconChat /> },
   { href: "/screen-share", label: "Screen Share", icon: <IconScreenShare /> },
+  { href: "/playground", label: "Playground", icon: <IconPlayground /> },
 ];
 
 export function AdminSidebar() {

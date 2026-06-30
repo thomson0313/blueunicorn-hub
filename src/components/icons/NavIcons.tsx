@@ -77,6 +77,17 @@ export function IconScreenShare({ size = 20, className = "shrink-0" }: IconProps
   );
 }
 
+export function IconPlayground({ size = 20, className = "shrink-0" }: IconProps) {
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M6 11h4M8 9v4" />
+      <line x1="15" y1="12" x2="15.01" y2="12" />
+      <line x1="18" y1="10" x2="18.01" y2="10" />
+      <rect x="2" y="6" width="20" height="12" rx="4" />
+    </svg>
+  );
+}
+
 export function IconProfile({ size = 20, className = "shrink-0" }: IconProps) {
   return (
     <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
