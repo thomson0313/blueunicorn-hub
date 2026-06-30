@@ -1657,3 +1657,41 @@ export async function deleteCalendarSchedule(id: string): Promise<boolean> {
   dbError(error);
   return !!data;
 }
+
+/* ----------------------- App settings (key/value) ----------------------- */
+
+export async function getAppSetting<T = unknown>(key: string): Promise<T | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from("app_settings")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+    if (error) return null;
+    return ((data as { value?: T } | null)?.value ?? null) as T | null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setAppSetting(key: string, value: unknown): Promise<void> {
+  const { error } = await getSupabase()
+    .from("app_settings")
+    .upsert({ key, value, updated_at: nowISO() }, { onConflict: "key" });
+  dbError(error);
+}
+
+const PLAYGROUND_HIDDEN_KEY = "playground.hiddenGames";
+
+/** Game ids that admins have hidden from the members' Playground. */
+export async function getHiddenPlaygroundGames(): Promise<string[]> {
+  const value = await getAppSetting<string[]>(PLAYGROUND_HIDDEN_KEY);
+  return Array.isArray(value) ? value : [];
+}
+
+export async function setPlaygroundGameHidden(id: string, hidden: boolean): Promise<void> {
+  const current = new Set(await getHiddenPlaygroundGames());
+  if (hidden) current.add(id);
+  else current.delete(id);
+  await setAppSetting(PLAYGROUND_HIDDEN_KEY, [...current]);
+}

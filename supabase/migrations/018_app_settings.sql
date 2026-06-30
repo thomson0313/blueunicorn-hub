@@ -1,0 +1,6 @@
+-- Generic key/value store for hub-wide settings (e.g. playground game visibility).
+create table if not exists app_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);

@@ -89,7 +89,7 @@ export function GameFrame({
               {(
                 [
                   { id: "bot" as const, label: "vs Bot" },
-                  { id: "two" as const, label: "2 Players" },
+                  { id: "two" as const, label: "Online 2P" },
                 ]
               ).map((m) => (
                 <button

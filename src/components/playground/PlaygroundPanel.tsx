@@ -1,67 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BrandClock } from "@/components/playground/BrandClock";
 import { GameFrame } from "@/components/playground/GameFrame";
+import { GamePreview } from "@/components/playground/GamePreview";
 import { Chess } from "@/components/playground/games/Chess";
 import { ConnectFour } from "@/components/playground/games/ConnectFour";
 import { TicTacToe } from "@/components/playground/games/TicTacToe";
 import { Tetris } from "@/components/playground/games/Tetris";
-
-type GameId = "tictactoe" | "connect4" | "chess" | "tetris";
-
-type GameDef = {
-  id: GameId;
-  title: string;
-  tagline: string;
-  emoji: string;
-  accent: string;
-  supportsBot: boolean;
-  supportsTwoPlayer: boolean;
-};
-
-const GAMES: GameDef[] = [
-  {
-    id: "chess",
-    title: "Chess",
-    tagline: "Full rules · castling, en passant, promotion",
-    emoji: "♞",
-    accent: "from-slate-700 to-slate-900",
-    supportsBot: true,
-    supportsTwoPlayer: true,
-  },
-  {
-    id: "connect4",
-    title: "Connect Four",
-    tagline: "Drop discs, line up four to win",
-    emoji: "🔴",
-    accent: "from-brand-500 to-brand-700",
-    supportsBot: true,
-    supportsTwoPlayer: true,
-  },
-  {
-    id: "tictactoe",
-    title: "Tic-Tac-Toe",
-    tagline: "Classic 3×3 · unbeatable bot",
-    emoji: "⭕",
-    accent: "from-rose-400 to-rose-600",
-    supportsBot: true,
-    supportsTwoPlayer: true,
-  },
-  {
-    id: "tetris",
-    title: "Tetris",
-    tagline: "Stack, clear lines, chase a high score",
-    emoji: "🧱",
-    accent: "from-emerald-400 to-emerald-600",
-    supportsBot: false,
-    supportsTwoPlayer: false,
-  },
-];
+import { GAME_REGISTRY, type GameId } from "@/lib/games/registry";
 
 export function PlaygroundPanel() {
   const [active, setActive] = useState<GameId | null>(null);
-  const game = GAMES.find((g) => g.id === active) ?? null;
+  const [enabled, setEnabled] = useState<GameId[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/playground/games")
+      .then((r) => (r.ok ? r.json() : { games: GAME_REGISTRY.map((g) => g.id) }))
+      .then((d) => {
+        if (!cancelled) setEnabled((d.games as GameId[]) ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setEnabled(GAME_REGISTRY.map((g) => g.id));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const games = useMemo(() => {
+    if (!enabled) return [];
+    const set = new Set(enabled);
+    return GAME_REGISTRY.filter((g) => set.has(g.id));
+  }, [enabled]);
+
+  const game = games.find((g) => g.id === active) ?? null;
 
   return (
     <div className="space-y-6">
@@ -71,43 +45,61 @@ export function PlaygroundPanel() {
         <section>
           <h1 className="text-xl font-bold text-slate-900 mb-1">Playground</h1>
           <p className="text-slate-500 text-sm mb-4">
-            Take a break with a quick game. Play against the bot or a friend, in a window or fullscreen.
+            Take a break with a quick game. Play against the bot or a friend on another computer, in a window or
+            fullscreen.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {GAMES.map((g) => (
-              <button
-                key={g.id}
-                type="button"
-                onClick={() => setActive(g.id)}
-                className="group text-left rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer"
-              >
-                <div
-                  className={`w-12 h-12 rounded-xl bg-gradient-to-br ${g.accent} flex items-center justify-center text-2xl mb-3`}
+
+          {enabled && games.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+              <p className="text-slate-600 font-medium">No games available right now.</p>
+              <p className="text-slate-400 text-sm mt-1">An admin can enable games from the Add-ons page.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {games.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setActive(g.id)}
+                  className="group text-left rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition overflow-hidden cursor-pointer"
                 >
-                  <span>{g.emoji}</span>
-                </div>
-                <h2 className="font-semibold text-slate-900">{g.title}</h2>
-                <p className="text-xs text-slate-500 mt-0.5">{g.tagline}</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {g.supportsBot && (
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">
-                      vs Bot
-                    </span>
-                  )}
-                  {g.supportsTwoPlayer && (
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                      2 Players
-                    </span>
-                  )}
-                  {!g.supportsBot && (
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                      Solo
-                    </span>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
+                  <div className={`relative aspect-[4/3] flex items-center justify-center bg-gradient-to-br ${g.accent}`}>
+                    <div className="scale-90">
+                      <GamePreview id={g.id} />
+                    </div>
+                    <div className="absolute inset-0 bg-slate-900/55 group-hover:bg-slate-900/35 transition flex items-center justify-center">
+                      <span className="flex items-center justify-center w-14 h-14 rounded-full bg-white/95 text-brand-600 shadow-lg group-hover:scale-110 transition">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </span>
+                    </div>
+                    <span className="absolute bottom-2 left-3 text-white font-semibold drop-shadow">{g.title}</span>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-xs text-slate-500">{g.tagline}</p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {g.supportsBot && (
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">
+                          vs Bot
+                        </span>
+                      )}
+                      {g.supportsTwoPlayer && (
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                          2 Players online
+                        </span>
+                      )}
+                      {!g.supportsBot && (
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                          Solo
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
       ) : (
         <GameFrame

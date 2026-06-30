@@ -45,6 +45,29 @@ type ScreenShareSession = {
 
 let screenShareSession: ScreenShareSession | null = null;
 
+// ── Playground multiplayer rooms ──
+// Lightweight relay: clients own the authoritative game logic; the server just
+// pairs two players in a room and forwards moves between them.
+type GameRoom = {
+  code: string;
+  gameId: string;
+  hostId: string;
+  hostName: string;
+  guestId?: string;
+  guestName?: string;
+};
+
+const gameRooms = new Map<string, GameRoom>();
+
+function makeRoomCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  do {
+    code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  } while (gameRooms.has(code));
+  return code;
+}
+
 function participantMapToList(map: Map<string, string>): ScreenShareParticipant[] {
   return [...map.entries()].map(([id, name]) => ({ id, name }));
 }
@@ -271,6 +294,88 @@ app.prepare().then(async () => {
       }
     );
 
+    // ── Playground multiplayer ──
+    function leaveGameRoom(code: string) {
+      const room = gameRooms.get(code);
+      if (!room) return;
+      if (room.hostId !== userId && room.guestId !== userId) return;
+      socket.leave(`groom:${code}`);
+      socket.to(`groom:${code}`).emit("game:opponent-left");
+      gameRooms.delete(code);
+    }
+
+    socket.on(
+      "game:create",
+      (payload: { gameId?: string }, ack?: (res: { code?: string; error?: string }) => void) => {
+        const gameId = String(payload?.gameId || "");
+        if (!gameId) {
+          ack?.({ error: "Invalid game" });
+          return;
+        }
+        const code = makeRoomCode();
+        gameRooms.set(code, { code, gameId, hostId: userId, hostName: user.name });
+        socket.join(`groom:${code}`);
+        ack?.({ code });
+      }
+    );
+
+    socket.on(
+      "game:join",
+      (
+        payload: { code?: string; gameId?: string },
+        ack?: (res: { ok?: boolean; gameId?: string; error?: string }) => void
+      ) => {
+        const code = String(payload?.code || "").toUpperCase().trim();
+        const room = gameRooms.get(code);
+        if (!room) {
+          ack?.({ error: "Room not found" });
+          return;
+        }
+        if (payload?.gameId && room.gameId !== payload.gameId) {
+          ack?.({ error: "This room is for a different game" });
+          return;
+        }
+        if (room.hostId === userId) {
+          ack?.({ error: "You are hosting this room on another tab" });
+          return;
+        }
+        if (room.guestId) {
+          ack?.({ error: "Room is full" });
+          return;
+        }
+        room.guestId = userId;
+        room.guestName = user.name;
+        socket.join(`groom:${code}`);
+        ack?.({ ok: true, gameId: room.gameId });
+        io.to(`groom:${code}`).emit("game:start", {
+          code,
+          gameId: room.gameId,
+          hostName: room.hostName,
+          guestName: room.guestName,
+        });
+      }
+    );
+
+    socket.on("game:move", (payload: { code?: string; move?: unknown }) => {
+      const code = String(payload?.code || "");
+      const room = gameRooms.get(code);
+      if (!room) return;
+      if (room.hostId !== userId && room.guestId !== userId) return;
+      socket.to(`groom:${code}`).emit("game:opponent-move", { move: payload?.move });
+    });
+
+    socket.on("game:reset", (payload: { code?: string }) => {
+      const code = String(payload?.code || "");
+      const room = gameRooms.get(code);
+      if (!room) return;
+      if (room.hostId !== userId && room.guestId !== userId) return;
+      socket.to(`groom:${code}`).emit("game:reset");
+    });
+
+    socket.on("game:leave", (payload: { code?: string }) => {
+      leaveGameRoom(String(payload?.code || ""));
+    });
+
     socket.on("general:send", async (payload) => {
       await handleGeneralSend(io, user, payload);
     });
@@ -318,6 +423,14 @@ app.prepare().then(async () => {
     );
 
     socket.on("disconnect", async () => {
+      // Tear down any playground rooms this user was part of.
+      for (const [code, room] of gameRooms) {
+        if (room.hostId === userId || room.guestId === userId) {
+          socket.to(`groom:${code}`).emit("game:opponent-left");
+          gameRooms.delete(code);
+        }
+      }
+
       if (screenShareSession) {
         // Only treat the user as fully gone when their last socket disconnects
         // (so reload / second tab doesn't kill the session).
