@@ -38,12 +38,29 @@ export function TicTacToe({ mode, fullscreen }: { mode: GameMode; fullscreen: bo
     setTurn("X");
   }, []);
 
+  const replay = useCallback((moves: number[]) => {
+    let t: TTTMark = "X";
+    const b = tttCreate();
+    for (const i of moves) {
+      if (i >= 0 && i < 9 && !b[i]) {
+        b[i] = t;
+        t = t === "X" ? "O" : "X";
+      }
+    }
+    setBoard(b);
+    setTurn(t);
+  }, []);
+
   const room = useGameRoom<number>("tictactoe", {
     onOpponentMove: (i) => place(i),
     onReset: reset,
+    onSync: replay,
   });
 
-  const mySide: TTTMark | null = room.role === "host" ? "X" : room.role === "guest" ? "O" : null;
+  const isSpectator = room.role === "spectator";
+  const mySide: TTTMark | null = room.seat === 0 ? "X" : room.seat === 1 ? "O" : null;
+  const opponentName = room.seat === 0 ? room.players[1] : room.players[0];
+  const showBoard = !online || room.phase === "playing" || room.phase === "watching";
 
   useEffect(() => {
     if (online || mode !== "bot" || winner || turn !== BOT) return;
@@ -57,7 +74,7 @@ export function TicTacToe({ mode, fullscreen }: { mode: GameMode; fullscreen: bo
   function clickCell(i: number) {
     if (board[i] || winner) return;
     if (online) {
-      if (!room.connected || turn !== mySide) return;
+      if (isSpectator || room.phase !== "playing" || turn !== mySide) return;
       place(i);
       room.sendMove(i);
       return;
@@ -66,15 +83,19 @@ export function TicTacToe({ mode, fullscreen }: { mode: GameMode; fullscreen: bo
     place(i);
   }
 
-  if (online && !room.connected) {
+  if (online && !showBoard) {
     return <OnlineLobby room={room} fullscreen={fullscreen} />;
   }
 
   const status = (() => {
     if (winner === "draw") return "It's a draw";
     if (online) {
+      if (isSpectator) {
+        if (winner) return `${winner} wins`;
+        return `${turn}'s turn`;
+      }
       if (winner) return winner === mySide ? "You win!" : "You lose";
-      return turn === mySide ? "Your turn" : `${room.opponentName ?? "Opponent"}'s turn`;
+      return turn === mySide ? "Your turn" : `${opponentName ?? "Opponent"}'s turn`;
     }
     if (winner) return `${winner} wins!`;
     if (mode === "bot") return turn === "X" ? "Your move (X)" : "Bot is thinking…";
@@ -82,15 +103,16 @@ export function TicTacToe({ mode, fullscreen }: { mode: GameMode; fullscreen: bo
   })();
 
   const size = fullscreen ? 110 : 88;
-  const locked = online && (!room.connected || turn !== mySide);
+  const locked = isSpectator || (online && (room.phase !== "playing" || turn !== mySide));
 
   return (
     <div className="flex flex-col items-center gap-4">
       {online && (
         <OnlineBanner
-          code={room.code}
-          you={`You are ${mySide}`}
-          opponentName={room.opponentName}
+          you={`You are ${mySide ?? "?"}`}
+          opponentName={opponentName ?? null}
+          spectatorCount={room.spectatorCount}
+          isSpectator={isSpectator}
           fullscreen={fullscreen}
           showRematch={!!winner}
           onRematch={() => {

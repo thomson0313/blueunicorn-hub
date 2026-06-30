@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState } from "react";
 
 const TZ = "Asia/Tokyo";
@@ -76,7 +75,7 @@ function AnalogClock({
   secondAngle: number;
 }) {
   return (
-    <div className="relative w-28 h-28 sm:w-32 sm:h-32 shrink-0">
+    <div className="w-28 h-28 sm:w-32 sm:h-32 shrink-0">
       <svg viewBox="0 0 200 200" className="w-full h-full" aria-hidden>
         <circle cx="100" cy="100" r="94" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.5)" strokeWidth="4" />
         {Array.from({ length: 12 }).map((_, i) => {
@@ -96,6 +95,21 @@ function AnalogClock({
             />
           );
         })}
+
+        {/* Brand marks sit beneath the needles: logo on top, B.U at the bottom. */}
+        <image href="/blunicorn-logo.png" x="86" y="44" width="28" height="28" preserveAspectRatio="xMidYMid meet" />
+        <text
+          x="100"
+          y="146"
+          textAnchor="middle"
+          fontSize="15"
+          fontWeight="700"
+          fill="#ffffff"
+          style={{ letterSpacing: "1.5px" }}
+        >
+          B.U
+        </text>
+
         <g transform={`rotate(${hourAngle} 100 100)`}>
           <line x1="100" y1="100" x2="100" y2="58" stroke="#fff" strokeWidth="6" strokeLinecap="round" />
         </g>
@@ -105,14 +119,9 @@ function AnalogClock({
         <g transform={`rotate(${secondAngle} 100 100)`}>
           <line x1="100" y1="112" x2="100" y2="34" stroke="#d2ecff" strokeWidth="2" strokeLinecap="round" />
         </g>
+        <circle cx="100" cy="100" r="5" fill="#fff" />
+        <circle cx="100" cy="100" r="2.5" fill="#1c6bb0" />
       </svg>
-      {/* Brand hub: logo + B.U at the clock center. */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-        <span className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white shadow-md">
-          <Image src="/blunicorn-logo.png" alt="Blunicorn" width={22} height={22} style={{ height: "auto" }} />
-        </span>
-        <span className="mt-0.5 text-[10px] font-bold tracking-widest text-white drop-shadow">B.U</span>
-      </div>
     </div>
   );
 }

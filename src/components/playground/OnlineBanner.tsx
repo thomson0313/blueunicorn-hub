@@ -1,16 +1,18 @@
 "use client";
 
 export function OnlineBanner({
-  code,
   you,
   opponentName,
+  spectatorCount,
+  isSpectator,
   fullscreen,
   showRematch,
   onRematch,
 }: {
-  code: string | null;
   you: string;
   opponentName: string | null;
+  spectatorCount: number;
+  isSpectator: boolean;
   fullscreen: boolean;
   showRematch: boolean;
   onRematch: () => void;
@@ -21,12 +23,14 @@ export function OnlineBanner({
         fullscreen ? "bg-white/10 text-brand-50" : "bg-brand-50 text-brand-700"
       }`}
     >
-      {code && (
-        <span className="font-mono font-semibold tracking-widest">Room {code}</span>
+      {isSpectator ? (
+        <span className="font-semibold">👁 Watching</span>
+      ) : (
+        <span className="font-medium">{you}</span>
       )}
-      <span className="font-medium">{you}</span>
-      <span className="opacity-80">vs {opponentName ?? "Opponent"}</span>
-      {showRematch && (
+      {!isSpectator && <span className="opacity-80">vs {opponentName ?? "Opponent"}</span>}
+      {spectatorCount > 0 && <span className="opacity-70">· {spectatorCount} watching</span>}
+      {!isSpectator && showRematch && (
         <button
           type="button"
           onClick={onRematch}

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { GameRoom } from "@/lib/games/useGameRoom";
 
 export function OnlineLobby({
@@ -10,22 +9,8 @@ export function OnlineLobby({
   room: GameRoom<unknown>;
   fullscreen: boolean;
 }) {
-  const [joinCode, setJoinCode] = useState("");
-  const [copied, setCopied] = useState(false);
-
   const textMuted = fullscreen ? "text-brand-100" : "text-slate-500";
   const heading = fullscreen ? "text-white" : "text-slate-900";
-
-  function copyCode() {
-    if (!room.code) return;
-    navigator.clipboard?.writeText(room.code).then(
-      () => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
-      },
-      () => {}
-    );
-  }
 
   if (!room.socketReady) {
     return (
@@ -39,31 +24,16 @@ export function OnlineLobby({
     return (
       <Wrapper fullscreen={fullscreen}>
         <h3 className={`text-lg font-semibold ${heading}`}>Room created</h3>
-        <p className={`text-sm ${textMuted}`}>Share this code with your opponent:</p>
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-4xl font-bold tracking-[0.3em] text-brand-600 bg-white rounded-xl border border-brand-200 px-5 py-3">
-            {room.code}
-          </span>
-          <button
-            type="button"
-            onClick={copyCode}
-            className="rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium px-3 py-2 cursor-pointer"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
+        <p className={`text-sm ${textMuted} text-center max-w-xs`}>
+          Your room is now listed in the lobby. Waiting for another player to join…
+        </p>
+        <div className="flex items-center gap-2 text-sm">
+          <Spinner />
+          <span className={textMuted}>Waiting for an opponent</span>
         </div>
-        <p className={`text-sm ${textMuted}`}>Waiting for your opponent to join…</p>
         <button type="button" onClick={room.leaveRoom} className={cancelClass(fullscreen)}>
-          Cancel
+          Cancel room
         </button>
-      </Wrapper>
-    );
-  }
-
-  if (room.phase === "joining") {
-    return (
-      <Wrapper fullscreen={fullscreen}>
-        <p className={textMuted}>Joining room…</p>
       </Wrapper>
     );
   }
@@ -71,8 +41,8 @@ export function OnlineLobby({
   if (room.phase === "closed") {
     return (
       <Wrapper fullscreen={fullscreen}>
-        <h3 className={`text-lg font-semibold ${heading}`}>Opponent left</h3>
-        <p className={`text-sm ${textMuted}`}>The game has ended. Start a new room to play again.</p>
+        <h3 className={`text-lg font-semibold ${heading}`}>Match ended</h3>
+        <p className={`text-sm ${textMuted}`}>A player left the room. Pick another room or create your own.</p>
         <button
           type="button"
           onClick={room.leaveRoom}
@@ -84,61 +54,86 @@ export function OnlineLobby({
     );
   }
 
-  // idle
+  // lobby — browse open rooms
   return (
-    <Wrapper fullscreen={fullscreen}>
-      <h3 className={`text-lg font-semibold ${heading}`}>Play with a friend</h3>
-      <p className={`text-sm ${textMuted} max-w-xs text-center`}>
-        Create a room and share the code, or join a friend&apos;s room from another computer.
-      </p>
-      <button
-        type="button"
-        onClick={room.createRoom}
-        className="w-56 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-semibold px-4 py-2.5 cursor-pointer"
-      >
-        Create room
-      </button>
-      <div className={`flex items-center gap-3 w-56 ${textMuted}`}>
-        <span className="flex-1 h-px bg-current opacity-30" />
-        <span className="text-xs">or</span>
-        <span className="flex-1 h-px bg-current opacity-30" />
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          room.joinRoom(joinCode);
-        }}
-        className="flex flex-col items-center gap-2 w-56"
-      >
-        <input
-          value={joinCode}
-          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-          placeholder="Enter code"
-          maxLength={6}
-          className="w-full text-center font-mono text-lg tracking-[0.2em] rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
-        />
+    <Wrapper fullscreen={fullscreen} wide>
+      <div className="flex items-center justify-between w-full">
+        <h3 className={`text-lg font-semibold ${heading}`}>Open rooms</h3>
         <button
-          type="submit"
-          disabled={!joinCode.trim()}
-          className="w-full rounded-lg bg-slate-800 hover:bg-slate-900 disabled:opacity-40 disabled:cursor-default text-white font-semibold px-4 py-2.5 cursor-pointer"
+          type="button"
+          onClick={room.createRoom}
+          className="rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold px-4 py-2 cursor-pointer"
         >
-          Join room
+          + Create room
         </button>
-      </form>
+      </div>
+
+      {room.rooms.length === 0 ? (
+        <p className={`text-sm ${textMuted} py-6`}>
+          No rooms yet. Create one and ask a friend to join from their computer.
+        </p>
+      ) : (
+        <ul className="w-full space-y-2">
+          {room.rooms.map((r) => (
+            <li
+              key={r.code}
+              className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 ${
+                fullscreen ? "bg-white/10" : "bg-white border border-slate-200"
+              }`}
+            >
+              <div className="min-w-0">
+                <p className={`font-medium truncate ${fullscreen ? "text-white" : "text-slate-800"}`}>
+                  {r.hostName || "Player"}&apos;s room
+                </p>
+                <p className={`text-xs ${textMuted}`}>
+                  {r.full ? "In match · 2/2" : "Waiting · 1/2"}
+                  {r.spectatorCount > 0 && ` · ${r.spectatorCount} watching`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => room.joinRoom(r.code)}
+                className={`shrink-0 rounded-lg text-sm font-semibold px-4 py-2 cursor-pointer ${
+                  r.full
+                    ? "bg-slate-700 hover:bg-slate-800 text-white"
+                    : "bg-brand-500 hover:bg-brand-600 text-white"
+                }`}
+              >
+                {r.full ? "Watch" : "Join"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {room.error && <p className="text-sm text-red-500">{room.error}</p>}
     </Wrapper>
   );
 }
 
-function Wrapper({ children, fullscreen }: { children: React.ReactNode; fullscreen: boolean }) {
+function Wrapper({
+  children,
+  fullscreen,
+  wide,
+}: {
+  children: React.ReactNode;
+  fullscreen: boolean;
+  wide?: boolean;
+}) {
   return (
     <div
-      className={`flex flex-col items-center justify-center gap-4 rounded-xl px-6 py-10 ${
-        fullscreen ? "bg-white/5" : "bg-slate-50 border border-slate-200"
-      }`}
+      className={`flex flex-col items-center gap-4 rounded-xl px-6 py-8 w-full ${
+        wide ? "max-w-md" : "max-w-sm"
+      } ${fullscreen ? "bg-white/5" : "bg-slate-50 border border-slate-200"}`}
     >
       {children}
     </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <span className="inline-block w-4 h-4 rounded-full border-2 border-brand-400 border-t-transparent animate-spin" />
   );
 }
 

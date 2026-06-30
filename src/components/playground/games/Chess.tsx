@@ -46,12 +46,23 @@ export function Chess({ mode, fullscreen }: { mode: GameMode; fullscreen: boolea
     setSelected(null);
   }, []);
 
+  const replay = useCallback((moves: ChessMove[]) => {
+    let s = chessInitial();
+    for (const m of moves) s = applyMove(s, m);
+    setState(s);
+    setSelected(null);
+  }, []);
+
   const room = useGameRoom<ChessMove>("chess", {
     onOpponentMove: (move) => doMove(move),
     onReset: reset,
+    onSync: replay,
   });
 
-  const mySide: Color | null = room.role === "host" ? "w" : room.role === "guest" ? "b" : null;
+  const isSpectator = room.role === "spectator";
+  const mySide: Color | null = room.seat === 0 ? "w" : room.seat === 1 ? "b" : null;
+  const opponentName = room.seat === 0 ? room.players[1] : room.players[0];
+  const showBoard = !online || room.phase === "playing" || room.phase === "watching";
 
   useEffect(() => {
     if (online || mode !== "bot" || gameOver || state.turn === HUMAN) return;
@@ -66,9 +77,10 @@ export function Chess({ mode, fullscreen }: { mode: GameMode; fullscreen: boolea
 
   function onSquare(s: Square) {
     if (gameOver || thinking) return;
-    if (online ? !room.connected || state.turn !== mySide : mode === "bot" && state.turn !== HUMAN) {
-      return;
-    }
+    const canControl = online
+      ? !isSpectator && room.phase === "playing" && state.turn === mySide
+      : !(mode === "bot" && state.turn !== HUMAN);
+    if (!canControl) return;
 
     if (selected !== null && targetSet.has(s)) {
       const move =
@@ -84,7 +96,7 @@ export function Chess({ mode, fullscreen }: { mode: GameMode; fullscreen: boolea
     else setSelected(null);
   }
 
-  if (online && !room.connected) {
+  if (online && !showBoard) {
     return <OnlineLobby room={room} fullscreen={fullscreen} />;
   }
 
@@ -93,14 +105,15 @@ export function Chess({ mode, fullscreen }: { mode: GameMode; fullscreen: boolea
     if (gameOver) {
       if (status === "checkmate") {
         const winner: Color = state.turn === "w" ? "b" : "w";
-        if (online) return winner === mySide ? "Checkmate — you win!" : "Checkmate — you lose";
+        if (online && !isSpectator) return winner === mySide ? "Checkmate — you win!" : "Checkmate — you lose";
         return `Checkmate — ${winner === "w" ? "White" : "Black"} wins!`;
       }
       return "Stalemate — it's a draw";
     }
     if (online) {
+      if (isSpectator) return status === "check" ? `${turnLabel} · check` : `${turnLabel} to move`;
       const mine = state.turn === mySide;
-      const base = mine ? "Your move" : `${room.opponentName ?? "Opponent"}'s move`;
+      const base = mine ? "Your move" : `${opponentName ?? "Opponent"}'s move`;
       return status === "check" ? `${base} · check` : base;
     }
     if (status === "check") return `${turnLabel} is in check`;
@@ -114,9 +127,10 @@ export function Chess({ mode, fullscreen }: { mode: GameMode; fullscreen: boolea
     <div className="flex flex-col items-center gap-4">
       {online && (
         <OnlineBanner
-          code={room.code}
-          you={`You are ${mySide === "w" ? "White" : "Black"}`}
-          opponentName={room.opponentName}
+          you={`You are ${mySide === "w" ? "White" : mySide === "b" ? "Black" : "?"}`}
+          opponentName={opponentName ?? null}
+          spectatorCount={room.spectatorCount}
+          isSpectator={isSpectator}
           fullscreen={fullscreen}
           showRematch={gameOver}
           onRematch={() => {

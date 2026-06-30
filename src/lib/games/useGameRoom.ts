@@ -3,80 +3,131 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "@/components/AppProvider";
 
-export type RoomRole = "host" | "guest";
-export type RoomPhase = "idle" | "hosting" | "joining" | "connected" | "closed";
+export type RoomRole = "host" | "guest" | "spectator";
+export type RoomPhase = "lobby" | "hosting" | "playing" | "watching" | "closed";
 
-type StartInfo = { code: string; gameId: string; hostName: string; guestName: string };
+export type RoomSummary = {
+  code: string;
+  gameId: string;
+  hostName: string;
+  playerCount: number;
+  spectatorCount: number;
+  full: boolean;
+  started: boolean;
+};
 
 export type GameRoomHandlers<M> = {
   onStart?: () => void;
+  onSync?: (moves: M[]) => void;
   onOpponentMove?: (move: M) => void;
+  onSignal?: (data: unknown) => void;
   onReset?: () => void;
-  onOpponentLeft?: () => void;
+  onClosed?: () => void;
 };
 
 export type GameRoom<M> = {
   phase: RoomPhase;
+  rooms: RoomSummary[];
   code: string | null;
   role: RoomRole | null;
-  opponentName: string | null;
+  seat: number | null;
+  players: string[];
+  spectatorCount: number;
+  started: boolean;
   error: string | null;
-  connected: boolean;
   socketReady: boolean;
+  isPlayer: boolean;
   createRoom: () => void;
   joinRoom: (code: string) => void;
   leaveRoom: () => void;
   sendMove: (move: M) => void;
+  sendSignal: (data: unknown) => void;
   sendReset: () => void;
 };
 
-/** Pairs two players over socket.io and relays moves for a turn-based game. */
+type JoinAck = {
+  ok?: boolean;
+  role?: "guest" | "spectator";
+  seat?: number | null;
+  players?: string[];
+  started?: boolean;
+  moves?: unknown[];
+  error?: string;
+};
+
+/** Open-room multiplayer: browse rooms, join to play or spectate, relay moves. */
 export function useGameRoom<M = unknown>(
   gameId: string,
   handlers: GameRoomHandlers<M>
 ): GameRoom<M> {
-  const { socket, socketConnected } = useApp();
-  const [phase, setPhase] = useState<RoomPhase>("idle");
+  const { socket, socketConnected, user } = useApp();
+  const [phase, setPhase] = useState<RoomPhase>("lobby");
+  const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [code, setCode] = useState<string | null>(null);
   const [role, setRole] = useState<RoomRole | null>(null);
-  const [opponentName, setOpponentName] = useState<string | null>(null);
+  const [seat, setSeat] = useState<number | null>(null);
+  const [players, setPlayers] = useState<string[]>([]);
+  const [spectatorCount, setSpectatorCount] = useState(0);
+  const [started, setStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
   const codeRef = useRef<string | null>(null);
-  const roleRef = useRef<RoomRole | null>(null);
 
+  // Subscribe to the lobby room list for this game.
   useEffect(() => {
     if (!socket) return;
+    const refreshList = () =>
+      socket.emit("game:list", { gameId }, (list: RoomSummary[]) => setRooms(list || []));
+    refreshList();
 
-    const onStart = (info: StartInfo) => {
-      setOpponentName(roleRef.current === "host" ? info.guestName : info.hostName);
-      setPhase("connected");
-      setError(null);
+    const onRooms = (payload: { gameId: string; rooms: RoomSummary[] }) => {
+      if (payload.gameId === gameId) setRooms(payload.rooms || []);
+    };
+    const onStart = (payload: { players: string[] }) => {
+      setPlayers(payload.players || []);
+      setStarted(true);
+      setPhase((p) => (p === "watching" ? p : "playing"));
       handlersRef.current.onStart?.();
     };
     const onMove = (payload: { move: M }) => handlersRef.current.onOpponentMove?.(payload.move);
+    const onSignal = (payload: { data: unknown }) => handlersRef.current.onSignal?.(payload.data);
     const onReset = () => handlersRef.current.onReset?.();
-    const onLeft = () => {
+    const onPeers = (payload: { players: string[]; spectatorCount: number; started: boolean }) => {
+      setPlayers(payload.players || []);
+      setSpectatorCount(payload.spectatorCount || 0);
+      setStarted(payload.started);
+    };
+    const onClosed = () => {
       setPhase("closed");
-      setOpponentName(null);
-      handlersRef.current.onOpponentLeft?.();
+      setStarted(false);
+      handlersRef.current.onClosed?.();
     };
 
+    socket.on("connect", refreshList);
+    socket.on("game:rooms", onRooms);
     socket.on("game:start", onStart);
     socket.on("game:opponent-move", onMove);
+    socket.on("game:signal", onSignal);
     socket.on("game:reset", onReset);
-    socket.on("game:opponent-left", onLeft);
+    socket.on("game:peers", onPeers);
+    socket.on("game:closed", onClosed);
+
     return () => {
+      socket.off("connect", refreshList);
+      socket.off("game:rooms", onRooms);
       socket.off("game:start", onStart);
       socket.off("game:opponent-move", onMove);
+      socket.off("game:signal", onSignal);
       socket.off("game:reset", onReset);
-      socket.off("game:opponent-left", onLeft);
+      socket.off("game:peers", onPeers);
+      socket.off("game:closed", onClosed);
+      socket.emit("game:unlist", { gameId });
     };
-  }, [socket]);
+  }, [socket, gameId]);
 
-  // Leave the room when the component using the hook unmounts.
+  // Leave the active room when the hook unmounts.
   useEffect(() => {
     return () => {
       if (socket && codeRef.current) socket.emit("game:leave", { code: codeRef.current });
@@ -89,68 +140,74 @@ export function useGameRoom<M = unknown>(
       return;
     }
     setError(null);
-    setPhase("hosting");
-    setRole("host");
-    roleRef.current = "host";
     socket.emit("game:create", { gameId }, (res: { code?: string; error?: string }) => {
       if (res?.code) {
-        setCode(res.code);
         codeRef.current = res.code;
+        setCode(res.code);
+        setRole("host");
+        setSeat(0);
+        setPlayers([user.name]);
+        setSpectatorCount(0);
+        setStarted(false);
+        setPhase("hosting");
       } else {
         setError(res?.error || "Could not create a room");
-        setPhase("idle");
-        setRole(null);
-        roleRef.current = null;
       }
     });
-  }, [socket, gameId]);
+  }, [socket, gameId, user.name]);
 
   const joinRoom = useCallback(
-    (raw: string) => {
-      const target = raw.toUpperCase().trim();
-      if (!target) return;
-      if (!socket) {
-        setError("Not connected to the server");
-        return;
-      }
+    (target: string) => {
+      const c = target.toUpperCase().trim();
+      if (!c || !socket) return;
       setError(null);
-      setPhase("joining");
-      // Set role up front so a fast game:start broadcast resolves correctly.
-      setRole("guest");
-      roleRef.current = "guest";
-      socket.emit(
-        "game:join",
-        { code: target, gameId },
-        (res: { ok?: boolean; error?: string }) => {
-          if (res?.ok) {
-            setCode(target);
-            codeRef.current = target;
-          } else {
-            setError(res?.error || "Could not join the room");
-            setPhase("idle");
-            setRole(null);
-            roleRef.current = null;
-          }
+      socket.emit("game:join", { code: c }, (res: JoinAck) => {
+        if (!res?.ok) {
+          setError(res?.error || "Could not join the room");
+          return;
         }
-      );
+        codeRef.current = c;
+        setCode(c);
+        setRole(res.role === "spectator" ? "spectator" : "guest");
+        setSeat(res.seat ?? null);
+        setPlayers(res.players || []);
+        setStarted(!!res.started);
+        if (res.role === "spectator") {
+          setPhase("watching");
+          handlersRef.current.onSync?.((res.moves || []) as M[]);
+        } else {
+          setPhase("playing");
+          handlersRef.current.onSync?.((res.moves || []) as M[]);
+          handlersRef.current.onStart?.();
+        }
+      });
     },
-    [socket, gameId]
+    [socket]
   );
 
   const leaveRoom = useCallback(() => {
     if (socket && codeRef.current) socket.emit("game:leave", { code: codeRef.current });
     codeRef.current = null;
-    roleRef.current = null;
     setCode(null);
     setRole(null);
-    setOpponentName(null);
+    setSeat(null);
+    setPlayers([]);
+    setSpectatorCount(0);
+    setStarted(false);
     setError(null);
-    setPhase("idle");
+    setPhase("lobby");
   }, [socket]);
 
   const sendMove = useCallback(
     (move: M) => {
       if (socket && codeRef.current) socket.emit("game:move", { code: codeRef.current, move });
+    },
+    [socket]
+  );
+
+  const sendSignal = useCallback(
+    (data: unknown) => {
+      if (socket && codeRef.current) socket.emit("game:signal", { code: codeRef.current, data });
     },
     [socket]
   );
@@ -161,16 +218,21 @@ export function useGameRoom<M = unknown>(
 
   return {
     phase,
+    rooms,
     code,
     role,
-    opponentName,
+    seat,
+    players,
+    spectatorCount,
+    started,
     error,
-    connected: phase === "connected",
     socketReady: socketConnected,
+    isPlayer: role === "host" || role === "guest",
     createRoom,
     joinRoom,
     leaveRoom,
     sendMove,
+    sendSignal,
     sendReset,
   };
 }

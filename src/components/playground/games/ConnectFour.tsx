@@ -43,12 +43,30 @@ export function ConnectFour({ mode, fullscreen }: { mode: GameMode; fullscreen: 
     setTurn(1);
   }, []);
 
+  const replay = useCallback((moves: number[]) => {
+    let b = c4Create();
+    let t: C4Player = 1;
+    for (const col of moves) {
+      const res = c4Place(b, col, t);
+      if (res) {
+        b = res.board;
+        t = t === 1 ? 2 : 1;
+      }
+    }
+    setBoard(b);
+    setTurn(t);
+  }, []);
+
   const room = useGameRoom<number>("connect4", {
     onOpponentMove: (col) => place(col),
     onReset: reset,
+    onSync: replay,
   });
 
-  const mySide: C4Player | null = room.role === "host" ? 1 : room.role === "guest" ? 2 : null;
+  const isSpectator = room.role === "spectator";
+  const mySide: C4Player | null = room.seat === 0 ? 1 : room.seat === 1 ? 2 : null;
+  const opponentName = room.seat === 0 ? room.players[1] : room.players[0];
+  const showBoard = !online || room.phase === "playing" || room.phase === "watching";
 
   useEffect(() => {
     if (online || mode !== "bot" || winner || turn !== BOT) return;
@@ -64,7 +82,7 @@ export function ConnectFour({ mode, fullscreen }: { mode: GameMode; fullscreen: 
   function drop(col: number) {
     if (winner || thinking || c4DropRow(board, col) < 0) return;
     if (online) {
-      if (!room.connected || turn !== mySide) return;
+      if (isSpectator || room.phase !== "playing" || turn !== mySide) return;
       place(col);
       room.sendMove(col);
       return;
@@ -73,31 +91,35 @@ export function ConnectFour({ mode, fullscreen }: { mode: GameMode; fullscreen: 
     place(col);
   }
 
-  if (online && !room.connected) {
+  if (online && !showBoard) {
     return <OnlineLobby room={room} fullscreen={fullscreen} />;
   }
 
+  const sideName = (p: C4Player) => (p === 1 ? "Red" : "Yellow");
   const status = (() => {
     if (winner === "draw") return "It's a draw";
     if (online) {
+      if (isSpectator) return winner ? `${sideName(winner)} wins` : `${sideName(turn)}'s turn`;
       if (winner) return winner === mySide ? "You win!" : "You lose";
-      return turn === mySide ? "Your turn" : `${room.opponentName ?? "Opponent"}'s turn`;
+      return turn === mySide ? "Your turn" : `${opponentName ?? "Opponent"}'s turn`;
     }
-    if (winner) return `${winner === 1 ? "Red" : "Yellow"} wins!`;
+    if (winner) return `${sideName(winner)} wins!`;
     if (mode === "bot") return turn === 1 ? "Your move (Red)" : "Bot is thinking…";
-    return `${turn === 1 ? "Red" : "Yellow"}'s turn`;
+    return `${sideName(turn)}'s turn`;
   })();
 
   const cellSize = fullscreen ? 64 : 44;
-  const locked = winner !== null || thinking || (online && (!room.connected || turn !== mySide));
+  const locked =
+    winner !== null || thinking || isSpectator || (online && (room.phase !== "playing" || turn !== mySide));
 
   return (
     <div className="flex flex-col items-center gap-4">
       {online && (
         <OnlineBanner
-          code={room.code}
-          you={`You are ${mySide === 1 ? "Red" : "Yellow"}`}
-          opponentName={room.opponentName}
+          you={`You are ${mySide ? sideName(mySide) : "?"}`}
+          opponentName={opponentName ?? null}
+          spectatorCount={room.spectatorCount}
+          isSpectator={isSpectator}
           fullscreen={fullscreen}
           showRematch={winner !== null}
           onRematch={() => {

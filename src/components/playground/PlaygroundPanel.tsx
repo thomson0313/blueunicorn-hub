@@ -84,14 +84,14 @@ export function PlaygroundPanel() {
                           vs Bot
                         </span>
                       )}
+                      {g.supportsSolo && (
+                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                          Solo
+                        </span>
+                      )}
                       {g.supportsTwoPlayer && (
                         <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                           2 Players online
-                        </span>
-                      )}
-                      {!g.supportsBot && (
-                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                          Solo
                         </span>
                       )}
                     </div>
@@ -106,6 +106,7 @@ export function PlaygroundPanel() {
           title={game.title}
           subtitle={game.tagline}
           supportsBot={game.supportsBot}
+          supportsSolo={game.supportsSolo}
           supportsTwoPlayer={game.supportsTwoPlayer}
           onBack={() => setActive(null)}
         >
@@ -113,7 +114,7 @@ export function PlaygroundPanel() {
             if (game.id === "chess") return <Chess key={restartKey} mode={mode} fullscreen={fullscreen} />;
             if (game.id === "connect4") return <ConnectFour key={restartKey} mode={mode} fullscreen={fullscreen} />;
             if (game.id === "tictactoe") return <TicTacToe key={restartKey} mode={mode} fullscreen={fullscreen} />;
-            return <Tetris key={restartKey} fullscreen={fullscreen} />;
+            return <Tetris key={restartKey} mode={mode} fullscreen={fullscreen} />;
           }}
         </GameFrame>
       )}

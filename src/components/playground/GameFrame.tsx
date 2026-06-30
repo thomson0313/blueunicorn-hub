@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type GameMode = "bot" | "two";
+export type GameMode = "bot" | "solo" | "two";
 
 type RenderArgs = { mode: GameMode; fullscreen: boolean; restartKey: number };
+
+const MODE_LABELS: Record<GameMode, string> = {
+  bot: "vs Bot",
+  solo: "Solo",
+  two: "Online 2P",
+};
 
 function useFullscreen() {
   const ref = useRef<HTMLDivElement>(null);
@@ -33,6 +39,7 @@ export function GameFrame({
   title,
   subtitle,
   supportsBot = true,
+  supportsSolo = false,
   supportsTwoPlayer = true,
   onBack,
   children,
@@ -40,15 +47,22 @@ export function GameFrame({
   title: string;
   subtitle?: string;
   supportsBot?: boolean;
+  supportsSolo?: boolean;
   supportsTwoPlayer?: boolean;
   onBack: () => void;
   children: (args: RenderArgs) => React.ReactNode;
 }) {
   const { ref, isFull, toggle } = useFullscreen();
-  const [mode, setMode] = useState<GameMode>(supportsBot ? "bot" : "two");
+
+  const availableModes: GameMode[] = [
+    ...(supportsBot ? (["bot"] as const) : []),
+    ...(supportsSolo ? (["solo"] as const) : []),
+    ...(supportsTwoPlayer ? (["two"] as const) : []),
+  ];
+  const [mode, setMode] = useState<GameMode>(availableModes[0] ?? "solo");
   const [restartKey, setRestartKey] = useState(0);
 
-  const showModes = supportsBot && supportsTwoPlayer;
+  const showModes = availableModes.length > 1;
 
   function changeMode(next: GameMode) {
     setMode(next);
@@ -86,18 +100,13 @@ export function GameFrame({
         <div className="flex items-center gap-2 ml-auto">
           {showModes && (
             <div className={`flex rounded-lg p-0.5 ${isFull ? "bg-white/10" : "bg-slate-100"}`}>
-              {(
-                [
-                  { id: "bot" as const, label: "vs Bot" },
-                  { id: "two" as const, label: "Online 2P" },
-                ]
-              ).map((m) => (
+              {availableModes.map((m) => (
                 <button
-                  key={m.id}
+                  key={m}
                   type="button"
-                  onClick={() => changeMode(m.id)}
+                  onClick={() => changeMode(m)}
                   className={`px-3 py-1 text-xs font-medium rounded-md cursor-pointer transition ${
-                    mode === m.id
+                    mode === m
                       ? isFull
                         ? "bg-white text-brand-700"
                         : "bg-white text-brand-700 shadow-sm"
@@ -106,7 +115,7 @@ export function GameFrame({
                         : "text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  {m.label}
+                  {MODE_LABELS[m]}
                 </button>
               ))}
             </div>
